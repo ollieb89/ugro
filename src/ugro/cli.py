@@ -16,6 +16,8 @@ from rich.table import Table
 
 from .agent import UGROAgent
 from .config import load_config
+from .database import Database
+from .queue import JobQueue
 
 # Initialize Typer app and Rich console
 app = typer.Typer(help="UGRO: Unified GPU Resource Orchestrator")
@@ -30,6 +32,11 @@ def context_callback(ctx: typer.Context):
     try:
         config = load_config()
         ctx.ensure_object(dict)
+        if "database" not in ctx.obj:
+             ctx.obj["database"] = Database()
+        if "queue" not in ctx.obj:
+             ctx.obj["queue"] = JobQueue(ctx.obj["database"])
+
         ctx.obj["config"] = config
         ctx.obj["agent"] = UGROAgent(config=config)
     except Exception as e:
@@ -102,11 +109,34 @@ def launch(
     epochs: Annotated[int, typer.Option("--epochs", "-e", help="Number of epochs")] = 1,
     lr: Annotated[float, typer.Option("--lr", help="Learning rate")] = 0.0002,
     verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Verbose output")] = False,
+    now: Annotated[bool, typer.Option("--now", help="Launch immediately, bypassing queue")] = False,
 ):
     """Launch distributed training across cluster."""
     agent: UGROAgent = ctx.obj["agent"]
+    queue: JobQueue = ctx.obj["queue"]
     
-    console.print(f"🚀 Launching Job: {name}", style="bold green")
+    # Configuration dictionary for the job
+    job_config = {
+        "model": model,
+        "dataset": dataset,
+        "epochs": epochs,
+        "learning_rate": lr,
+        "verbose": verbose
+    }
+
+    if not now:
+        # Enqueue the job
+        job_id = queue.enqueue_job(model, dataset, job_config)
+        console.print(f"✅ Job enqueued successfully!", style="bold green")
+        console.print(f"   Job ID: {job_id}")
+        console.print(f"   Model: {model}")
+        console.print(f"   Dataset: {dataset}")
+        console.print(f"\nRun [bold]ugro queue list[/bold] to see pending jobs.")
+        console.print(f"Run [bold]ugro run-worker[/bold] to process the queue.")
+        return
+
+    # Immediate launch logic
+    console.print(f"🚀 Launching Job: {name} (Immediate Mode)", style="bold green")
     
     success = agent.launch_training(
         job_name=name,
@@ -131,6 +161,76 @@ def logs(
     """View training logs for a job."""
     agent: UGROAgent = ctx.obj["agent"]
     agent.display_logs(job_name, rank)
+
+
+# Queue Management Group
+queue_app = typer.Typer(help="Manage job queue")
+app.add_typer(queue_app, name="queue")
+
+@queue_app.command("list")
+def queue_list(ctx: typer.Context, limit: int = 10):
+    """List recent jobs in the queue."""
+    queue: JobQueue = ctx.obj["queue"]
+    jobs = queue.list_jobs(limit=limit)
+    
+    if not jobs:
+        console.print("No jobs found.", style="yellow")
+        return
+        
+    table = Table(show_header=True, header_style="bold magenta")
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Status")
+    table.add_column("Model")
+    table.add_column("Created At")
+    
+    for job in jobs:
+        status_style = {
+            "pending": "yellow",
+            "running": "blue",
+            "completed": "green",
+            "failed": "red"
+        }.get(job["status"], "white")
+        
+        table.add_row(
+            job["id"],
+            f"[{status_style}]{job['status']}[/{status_style}]",
+            job["model_name"],
+            job["created_at"]
+        )
+        
+    console.print(table)
+
+@queue_app.command("inspect")
+def queue_inspect(ctx: typer.Context, job_id: str):
+    """Inspect a specific job."""
+    queue: JobQueue = ctx.obj["queue"]
+    job = queue.get_job(job_id)
+    
+    if not job:
+        error_console.print(f"Job {job_id} not found.")
+        raise typer.Exit(code=1)
+        
+    console.print(f"\n🔍 Job Details: {job_id}", style="bold blue")
+    console.print(f"Status: {job['status']}")
+    console.print(f"Model: {job['model_name']}")
+    console.print(f"Dataset: {job['dataset_name']}")
+    console.print(f"Created: {job['created_at']}")
+    if job.get('started_at'):
+        console.print(f"Started: {job['started_at']}")
+    if job.get('completed_at'):
+        console.print(f"Completed: {job['completed_at']}")
+    
+    console.print("\nConfiguration:", style="bold")
+    console.print(job['config'])
+
+@app.command("run-worker")
+def run_worker(
+    ctx: typer.Context, 
+    loop_interval: Annotated[float, typer.Option("--interval", "-i", help="Polling interval")] = 5.0
+):
+    """Start a worker process to consume jobs from the queue."""
+    agent: UGROAgent = ctx.obj["agent"]
+    agent.process_queue(loop_interval=loop_interval)
 
 
 # Daemon Management Group

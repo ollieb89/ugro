@@ -1019,37 +1019,40 @@ http://localhost:8099/experiments
 
 ### Phase 2d: Advanced Features (Week 4+)
 
-After core is solid, add:
+**Goal:** Transform the prototype into a robust, scalable MLOps platform following production best practices.
 
-1. **Automatic Recovery**
-   - Detect if rank process dies
-   - Trigger graceful shutdown or auto-restart
-   - Save training state between attempts
+1.  **Fault Tolerance & Automatic Recovery**
+    *   **Resilience**: Implement **Elastic Training** (via `torch.distributed.elastic`) to handle dynamic node failure/recovery without restarting the entire cluster.
+    *   **Checkpointing**: Enforce atomic checkpointing with state dicts (optimizer, scheduler, RNG state) to enable reliable `load_from_checkpoint` recovery.
+    *   **Supervisor**: Wrap the training loop in a system daemon (e.g., `systemd` or robust Python supervisor) to auto-restart failed workers with backoff.
 
-2. **Job Queuing**
-   - Queue multiple experiments
-   - Auto-start when resources free up
-   - Prevent conflicts (don't run 2 jobs on same GPU)
+2.  **Intelligent Scheduling & Job Queuing**
+    *   **Architecture**: Implement a **Priority Queue** backend (SQLite for local, Redis for distributed) to manage job requests.
+    *   **Resource Awareness**: Scheduler tracks VRAM/Compute occupancy per node to bin-pack jobs efficiently.
+    *   **Policies**: Support `FIFO` and `Priority` (Urgent vs Batch) scheduling to maximize cluster utilization (don't run 2 jobs on same GPU unless VRAM allows).
 
-3. **Hyperparameter Search**
-   ```bash
-   ugro sweep --model llama-7b \
-     --learning_rate "1e-5,2e-5,5e-5" \
-     --batch_size "1,2" \
-     --lora_r "8,16,32" \
-     --epochs 1
-   # Spawns 9 experiments, queues intelligently
-   ```
+3.  **Hyperparameter Optimization (HPO) at Scale**
+    *   **Integration**: Seamless integration with **Optuna** (TPE Sampler) or **Ray Tune** for distributed sweeps.
+    *   **Tracking**: Automatic logging of all trials to **MLflow** or **Weights & Biases** (W&B) for visualization of hyperparameter importance.
+    ```bash
+    # Example: Async parallel sweep with Optuna
+    ugro sweep --study-name llama-lora-opt \
+      --search-space config/hpo_search_space.yaml \
+      --n-trials 50 \
+      --parallel-jobs 2 --storage sqlite:///ugro.db
+    ```
 
-4. **Model Serving**
-   - After training: `ugro serve job_20260120_120000`
-   - Deploys fine-tuned model behind inference API
-   - Load-balances across GPUs
+4.  **Production-Ready Model Serving**
+    *   **API Layer**: Use **FastAPI** for high-performance, async, type-safe REST APIs with Pydantic validation.
+    *   **Inference Engine**: Leverage **vLLM** or **TensorRT-LLM** for state-of-the-art throughput (Continuous Batching, PagedAttention).
+    *   **Lifecycle**:
+        - `ugro promote job_id` → Optimizes model (e.g., merge LoRA, quantize).
+        - `ugro serve --production` → Deploys to inference node with auto-scaling.
 
-5. **Multi-User Support**
-   - Per-user job quotas
-   - Priority queuing (urgent vs batch)
-   - Shared experiment results
+5.  **Multi-Tenancy & Governance**
+    *   **Isolation**: User namespacing for experiments (`/data/v1/experiments/{user}/{project}`).
+    *   **Registry**: Centralized Model Registry to track lineage (Data -> Config -> Code -> Model).
+    *   **Quotas**: Enforce per-user Compute/VRAM budgets to ensure fair resource access.
 
 ---
 

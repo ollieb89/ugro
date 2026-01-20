@@ -126,6 +126,41 @@ def load_model_with_lora(model_name: str, rank: int, logger):
     return model, tokenizer, max_seq_length
 
 
+def load_latest_checkpoint(checkpoint_dir: str, model, optimizer, logger) -> int:
+    """
+    Load the latest checkpoint if it exists.
+    Returns the starting epoch (0 if no checkpoint found).
+    """
+    checkpoint_dir_path = Path(checkpoint_dir)
+    if not checkpoint_dir_path.exists():
+        return 0
+        
+    checkpoints = list(checkpoint_dir_path.glob("epoch_*.pt"))
+    if not checkpoints:
+        return 0
+        
+    # Sort by modification time (most recent first) or parse epoch from name
+    latest_checkpoint = max(checkpoints, key=lambda p: p.stat().st_mtime)
+    
+    logger.info(f"resuming from checkpoint: {latest_checkpoint}")
+    
+    checkpoint = torch.load(latest_checkpoint, map_location="cpu")
+    
+    # Load model state
+    if isinstance(model, DDP):
+        model.module.load_state_dict(checkpoint["model_state_dict"])
+    else:
+        model.load_state_dict(checkpoint["model_state_dict"])
+        
+    # Load optimizer state
+    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    
+    start_epoch = checkpoint["epoch"] + 1
+    logger.info(f"Checkpoint loaded. Resuming from epoch {start_epoch}")
+    
+    return start_epoch
+
+
 def prepare_dataset(
     dataset_name: str,
     tokenizer,
@@ -379,6 +414,14 @@ def main(args):
         logger.info(f"Total training steps: {num_training_steps}")
         logger.info(f"Warmup steps: {num_warmup_steps}")
     
+    # Check for resumption
+    start_epoch = load_latest_checkpoint(args.checkpoint_dir, model, optimizer, logger)
+    if start_epoch >= args.num_epochs:
+        if rank == 0:
+            logger.info("Training already completed based on checkpoints.")
+        cleanup_distributed()
+        return
+
     # Training loop
     best_loss = float("inf")
     
@@ -389,7 +432,7 @@ def main(args):
         rank=rank,
         enable_tensorboard=True
     ) as emitter:
-        for epoch in range(args.num_epochs):
+        for epoch in range(start_epoch, args.num_epochs):
             train_sampler.set_epoch(epoch)  # Shuffle differently each epoch
             
             epoch_loss = train_epoch(

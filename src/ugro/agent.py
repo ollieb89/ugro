@@ -16,7 +16,13 @@ from .config import AppConfig, get_config_dir
 from .job import Job, JobStatus
 from .launch_coordinator import LaunchCoordinator
 from .result_aggregator import ResultAggregator
+from .result_aggregator import ResultAggregator
+from .result_aggregator import ResultAggregator
 from .health_monitor import TrainingMetricsCollector
+from .database import Database
+from .queue import JobQueue
+from .database import Database
+from .queue import JobQueue
 
 if TYPE_CHECKING:
     from typing import Any
@@ -55,6 +61,14 @@ class UGROAgent:
                 self.config = load_config(config_name)
                 self.app_config = None
         self.cluster = Cluster(self.config)
+
+        # Database and Queue
+        self.database = Database()
+        self.queue = JobQueue(self.database)
+
+        # Database and Queue
+        self.database = Database()
+        self.queue = JobQueue(self.database)
 
         self._result_aggregator = ResultAggregator()
         try:
@@ -538,3 +552,69 @@ class UGROAgent:
         if job_name in self.job_registry["jobs"]:
             return self.job_registry["jobs"][job_name]["status"]
         return None
+
+    def process_queue(self, loop_interval: float = 5.0):
+        """Infinite loop to process jobs from the queue"""
+        self.logger.info("Starting queue processor...")
+        print(f"🔄 Queue Processor started. Polling every {loop_interval}s...")
+        
+        while True:
+            try:
+                # 1. Peek next job
+                job_data = self.queue.peek_next_job()
+                if not job_data:
+                    time.sleep(loop_interval)
+                    continue
+                
+                print(f"\\n📢 Found pending job: {job_data['id']} (Priority: {job_data['priority']})")
+                
+                # 2. Check resources
+                # In a real system, we'd check if specific requested GPUs are free.
+                # Here, we do a simple cluster availability check.
+                # If any job is running (tracked in memory/file), we wait.
+                
+                active_job = None
+                for name, j in self.job_registry["jobs"].items():
+                     if j["status"] in [JobStatus.RUNNING]:
+                         active_job = name
+                         break
+                
+                if active_job:
+                    print(f"⏳ Cluster busy with '{active_job}'. Waiting...")
+                    time.sleep(loop_interval * 2)
+                    continue
+
+                # 3. Launch
+                job_id = job_data['id']
+                model = job_data['model_name']
+                dataset = job_data['dataset_name']
+                config = job_data['config']
+                
+                self.queue.update_status(job_id, 'running')
+                
+                # We reuse the job_id as the job_name for simplicity in the registry
+                launch_name = job_id 
+                
+                print(f"🚀 Processing Job {job_id}...")
+                
+                success = self.launch_training(
+                    job_name=launch_name,
+                    model=model,
+                    dataset=dataset,
+                    epochs=config.get('epochs', 1),
+                    learning_rate=config.get('learning_rate', 2e-4),
+                    verbose=config.get('verbose', False)
+                )
+                
+                final_status = 'completed' if success else 'failed'
+                self.queue.update_status(job_id, final_status)
+                
+                print(f"🏁 Job {job_id} finished: {final_status}")
+                
+            except KeyboardInterrupt:
+                print("\\n🛑 Queue processor stopping...")
+                break
+            except Exception as e:
+                self.logger.error(f"Queue processing error: {e}")
+                print(f"❌ Error in queue loop: {e}")
+                time.sleep(loop_interval)
