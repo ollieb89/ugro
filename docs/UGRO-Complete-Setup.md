@@ -1688,7 +1688,7 @@ cd /home/ollie/Development/Tools/ugro
 
 # Test config loading
 pixi run python -c "
-from src.config import load_config
+from ugro.config import load_config
 config = load_config()
 print('Cluster:', config['cluster']['name'])
 print('Master:', config['cluster']['master']['hostname'])
@@ -1703,7 +1703,7 @@ cd /home/ollie/Development/Tools/ugro
 
 # Test enhanced SSH utilities
 pixi run python -c "
-from src.ssh_utils import SSHClient
+from ugro.ssh_utils import SSHClient
 
 # Test SSH client
 ssh = SSHClient(host='192.168.1.101', user='ob', port=22)
@@ -1732,8 +1732,8 @@ cd /home/ollie/Development/Tools/ugro
 
 # Test cluster health monitoring
 pixi run python -c "
-from src.config import load_config, expand_paths
-from src.cluster import Cluster
+from ugro.config import load_config, expand_paths
+from ugro.cluster import Cluster
 
 config = expand_paths(load_config())
 cluster = Cluster(config)
@@ -1759,7 +1759,7 @@ cd /home/ollie/Development/Tools/ugro
 
 # Test complete job lifecycle
 pixi run python -c "
-from src.job import Job, JobStatus
+from ugro.job import Job, JobStatus
 import tempfile
 import shutil
 
@@ -1824,9 +1824,9 @@ cd /home/ollie/Development/Tools/ugro
 
 # Test complete system integration
 pixi run python -c "
-from src.config import load_config, expand_paths
-from src.cluster import Cluster
-from src.job import Job
+from ugro.config import load_config, expand_paths
+from ugro.cluster import Cluster
+from ugro.job import Job
 
 # Load configuration
 config = expand_paths(load_config())

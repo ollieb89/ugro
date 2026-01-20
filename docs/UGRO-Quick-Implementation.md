@@ -292,8 +292,8 @@ class SSHClient:
 
 from typing import Dict, List, Any
 import logging
-from src.config import get_config
-from src.ssh_utils import SSHClient
+from ugro.config import get_config
+from ugro.ssh_utils import SSHClient
 
 logger = logging.getLogger(__name__)
 
@@ -399,7 +399,7 @@ from typing import Dict, Any, Optional
 import json
 import logging
 
-from src.config import get_data_dir
+from ugro.config import get_data_dir
 
 logger = logging.getLogger(__name__)
 
@@ -477,9 +477,9 @@ import subprocess
 import time
 import json
 
-from src.config import get_config, get_logs_dir
-from src.cluster import Cluster
-from src.job import Job
+from ugro.config import get_config, get_logs_dir
+from ugro.cluster import Cluster
+from ugro.job import Job
 
 logger = logging.getLogger(__name__)
 
@@ -766,7 +766,7 @@ logging.basicConfig(
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.agent import ugroAgent
+from ugro.agent import ugroAgent
 
 @click.group()
 @click.pass_context
@@ -875,7 +875,7 @@ if __name__ == '__main__':
 ```python
 """ugro entry point"""
 
-from src.cli import main
+from ugro.cli import main
 
 if __name__ == "__main__":
     main()
@@ -897,7 +897,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path.cwd()))
 
-from src.config import load_config, expand_paths
+from ugro.config import load_config, expand_paths
 config = load_config()
 print("✓ Config loaded")
 print(f"  Cluster: {config['cluster']['name']}")
@@ -911,8 +911,8 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path.cwd()))
 
-from src.config import load_config, expand_paths
-from src.cluster import Cluster
+from ugro.config import load_config, expand_paths
+from ugro.cluster import Cluster
 
 # Load and process configuration
 config = load_config("cluster.yaml")
