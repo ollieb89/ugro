@@ -93,3 +93,39 @@ logging:
   format: "[%(asctime)s] %(name)s - %(levelname)s - %(message)s"
   file: "/home/ollie/Development/Tools/ugro/logs/agent.log"
   keep_days: 7
+
+# GitHub Webhook Configuration
+webhook:
+  # GitHub repository to monitor (format: owner/repo)
+  repository: "ollieb89/ugro"  # Set this to your GitHub repository, e.g., "username/ugro"
+  
+  # Branch to monitor
+  branch: "development"
+  
+  # Webhook secret for security (generate a strong random string)
+  secret: ""  # Set this to a secure random string
+  
+  # Webhook server configuration
+  server:
+    host: "0.0.0.0"
+    port: 8080
+    
+  # Synchronization settings
+  sync:
+    # Method: "rsync" (master pushes to workers) or "pull" (workers pull from GitHub)
+    method: "rsync"
+    
+    # Files/directories to exclude from synchronization
+    exclude:
+      - ".git"
+      - "__pycache__"
+      - "*.pyc"
+      - ".pytest_cache"
+      - "logs/"
+      - ".venv"
+      - "node_modules"
+      - ".DS_Store"
+      - "*.log"
+    
+    # Timeout for synchronization operations (seconds)
+    timeout: 600

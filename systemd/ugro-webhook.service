@@ -1,0 +1,26 @@
+[Unit]
+Description=UGRO Webhook Server
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=ollie
+Group=ollie
+WorkingDirectory=/home/ollie/Development/Tools/ugro
+Environment=PYTHONPATH=/home/ollie/Development/Tools/ugro/src
+ExecStart=/home/ollie/Development/Tools/ugro/.venv/bin/python -m ugro.webhook_server --config /home/ollie/Development/Tools/ugro/config/cluster.yaml --host 0.0.0.0 --port 8080
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/ollie/Development/Tools/ugro/logs
+
+[Install]
+WantedBy=multi-user.target
