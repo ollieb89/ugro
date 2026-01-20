@@ -911,8 +911,19 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path.cwd()))
 
+from src.config import load_config, expand_paths
 from src.cluster import Cluster
-cluster = Cluster()
+
+# Load and process configuration
+config = load_config("cluster.yaml")
+config = expand_paths(config)
+
+# Handle cluster.yaml structure - merge cluster section with root level fields
+if 'cluster' in config:
+    cluster_fields = config['cluster']
+    config.update(cluster_fields)
+
+cluster = Cluster(config)
 health = cluster.check_health()
 for name, status in health.items():
     print(f"{'✓' if status['healthy'] else '❌'} {name}: {status['message']}")
