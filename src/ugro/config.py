@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, List, Dict, Union
+from enum import Enum
 import yaml
 from pydantic import BaseModel, Field, field_validator
 
@@ -54,6 +55,54 @@ class CommConfig(BaseModel):
     timeout_seconds: int = 300
 
 
+class QueueType(str, Enum):
+    """Queue backend type."""
+    SQLITE = "sqlite"
+    REDIS = "redis"
+
+
+# Import Redis config from redis_client module to avoid circular imports
+# Note: This is imported here rather than at module top to keep config.py self-contained
+def _get_redis_config_class():
+    """Lazy import to avoid circular dependency."""
+    from ugro.queues.redis_client import RedisConfig
+    return RedisConfig
+
+
+class QueueConfig(BaseModel):
+    """Job queue configuration.
+    
+    Supports both legacy flat config and new nested RedisConfig.
+    """
+    type: QueueType = QueueType.SQLITE
+    
+    # Legacy flat fields (backward compatibility)
+    redis_host: str = "localhost"
+    redis_port: int = 6379
+    redis_db: int = 0
+    redis_password: Optional[str] = None
+    
+    # New nested config (optional - if provided, takes precedence)
+    # Using dict for Pydantic 2 compatibility without circular import
+    redis: Optional[Dict[str, Any]] = None
+    
+    def get_redis_config(self):
+        """Get RedisConfig, creating from legacy fields if needed."""
+        RedisConfig = _get_redis_config_class()
+        
+        if self.redis is not None:
+            return RedisConfig(**self.redis)
+        
+        # Create from legacy flat fields
+        return RedisConfig(
+            host=self.redis_host,
+            port=self.redis_port,
+            db=self.redis_db,
+            password=self.redis_password,
+        )
+
+
+
 class ClusterConfig(BaseModel):
     """Root cluster configuration."""
     name: str = "UGRO Cluster"
@@ -61,6 +110,7 @@ class ClusterConfig(BaseModel):
     description: Optional[str] = None
     master: MasterConfig
     communication: Optional[CommConfig] = Field(default_factory=CommConfig)
+    queue: QueueConfig = Field(default_factory=QueueConfig)
     nodes: Dict[str, NodeConfig] = Field(default_factory=dict)
     
     @property

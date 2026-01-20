@@ -1,0 +1,74 @@
+# UGRO HPO: LoRA Fine-tuning Search Space
+#
+# Example search space configuration for LoRA hyperparameter optimization.
+# Use with: ugro sweep --search-space config/llama_lora_hpo.yaml
+
+parameters:
+  # LoRA rank (trade-off: expressiveness vs memory/speed)
+  lora_r:
+    type: int
+    min: 4
+    max: 64
+    step: 4
+    default: 16
+
+  # LoRA scaling factor (typically >= lora_r)
+  lora_alpha:
+    type: float
+    min: 8.0
+    max: 128.0
+    log: true
+    default: 32.0
+
+  # Dropout for LoRA layers
+  lora_dropout:
+    type: float
+    min: 0.0
+    max: 0.3
+    default: 0.1
+
+  # Learning rate (log scale essential for deep learning)
+  learning_rate:
+    type: float
+    min: 1.0e-5
+    max: 1.0e-3
+    log: true
+    default: 5.0e-4
+
+  # Batch size (categorical for memory planning)
+  batch_size:
+    type: categorical
+    choices: [8, 16, 32, 64]
+    default: 16
+
+  # Warmup ratio (fraction of training for LR warmup)
+  warmup_ratio:
+    type: float
+    min: 0.0
+    max: 0.2
+    default: 0.05
+
+  # Weight decay for regularization
+  weight_decay:
+    type: float
+    min: 0.0
+    max: 0.1
+    default: 0.01
+
+  # Early stopping patience (epochs without improvement)
+  early_stopping_patience:
+    type: int
+    min: 3
+    max: 10
+    default: 5
+
+# Optimization objectives
+objectives:
+  - name: eval_loss
+    direction: minimize
+    weight: 1.0
+
+# Parameter constraints
+constraints:
+  - "lora_alpha >= lora_r"
+  - "learning_rate <= 0.001"

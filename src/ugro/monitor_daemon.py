@@ -15,6 +15,12 @@ from pathlib import Path
 from .agent import UGROAgent
 from .health_monitor import AdaptiveHealthMonitor, MonitoringConfig
 
+try:
+    from prometheus_client import start_http_server
+    PROMETHEUS_AVAILABLE = True
+except ImportError:
+    PROMETHEUS_AVAILABLE = False
+
 # Configure logging
 LOG_DIR = Path("/home/ollie/Development/Tools/ugro/logs")
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -57,6 +63,19 @@ class MonitorDaemon:
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, self._stop_event.set)
+
+        # Start Prometheus metrics server
+        if PROMETHEUS_AVAILABLE:
+            try:
+                # Todo: make port configurable under config.monitoring.prometheus_port
+                start_http_server(8000)
+                logger.info("Prometheus metrics server started on port 8000")
+            except Exception as e:
+                logger.error(f"Failed to start metrics server: {e}")
+        else:
+            logger.warning("prometheus_client not installed, metrics server disabled")
+
+        # Start the monitor loop as a background task
 
         # Start the monitor loop as a background task
         monitor_task = asyncio.create_task(self.monitor.start_monitoring())

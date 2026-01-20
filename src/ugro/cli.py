@@ -13,11 +13,14 @@ from typing import Annotated, Any, Optional
 import typer
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 from .agent import UGROAgent
-from .config import load_config
+from .config import load_config, QueueType
 from .database import Database
-from .queue import JobQueue
+# from .queue import JobQueue # Legacy
+from .queues import SQLiteJobQueue, RedisJobQueue, Job, JobStatus, JobPriority, JobResources
+from .scheduler import Scheduler, ResourceTracker
 
 # Initialize Typer app and Rich console
 app = typer.Typer(help="UGRO: Unified GPU Resource Orchestrator")
@@ -34,8 +37,36 @@ def context_callback(ctx: typer.Context):
         ctx.ensure_object(dict)
         if "database" not in ctx.obj:
              ctx.obj["database"] = Database()
+        if "database" not in ctx.obj:
+             ctx.obj["database"] = Database()
         if "queue" not in ctx.obj:
-             ctx.obj["queue"] = JobQueue(ctx.obj["database"])
+             cluster_conf = config.get("cluster", {})
+             # Handle both dict access (legacy load_config return) and object access if we improved it
+             # Current load_config returns dict. config.py models are used inside UGROAgent, 
+             # but here load_config returns data.
+             # We should probably parse it into AppConfig to be safe, but legacy code uses dict.
+             # Let's check keys manually or use the model defaults if missing.
+             
+             q_conf = cluster_conf.get("queue", {})
+             q_type = q_conf.get("type", "sqlite")
+             
+             if q_type == "redis":
+                 host = q_conf.get("redis_host", "localhost")
+                 port = q_conf.get("redis_port", 6379)
+                 db = q_conf.get("redis_db", 0)
+                 password = q_conf.get("redis_password", None)
+                 
+                 try:
+                     ctx.obj["queue"] = RedisJobQueue(host=host, port=port, db=db, password=password)
+                 except ImportError:
+                     error_console.print("❌ Redis support requires redis-py. Install with `pip install redis` or switch to sqlite.")
+                     raise typer.Exit(code=1)
+                 except Exception as e:
+                     error_console.print(f"❌ Failed to connect to Redis: {e}")
+                     raise typer.Exit(code=1)
+             else:
+                 # Default to sqlite
+                 ctx.obj["queue"] = SQLiteJobQueue(db_path=str(ctx.obj["database"].db_path))
 
         ctx.obj["config"] = config
         ctx.obj["agent"] = UGROAgent(config=config)
@@ -126,7 +157,14 @@ def launch(
 
     if not now:
         # Enqueue the job
-        job_id = queue.enqueue_job(model, dataset, job_config)
+        job = Job(
+            name=name,
+            command=f"ugro launch --now --name {name} --model {model} --dataset {dataset} --epochs {epochs} --lr {lr} {'--verbose' if verbose else ''}",
+            priority=JobPriority.NORMAL,
+            resources=JobResources(gpu_count=1), # Default 1 GPU
+            metadata=job_config
+        )
+        job_id = queue.submit(job)
         console.print(f"✅ Job enqueued successfully!", style="bold green")
         console.print(f"   Job ID: {job_id}")
         console.print(f"   Model: {model}")
@@ -170,7 +208,7 @@ app.add_typer(queue_app, name="queue")
 @queue_app.command("list")
 def queue_list(ctx: typer.Context, limit: int = 10):
     """List recent jobs in the queue."""
-    queue: JobQueue = ctx.obj["queue"]
+    queue = ctx.obj["queue"] # Use dynamic type
     jobs = queue.list_jobs(limit=limit)
     
     if not jobs:
@@ -185,17 +223,18 @@ def queue_list(ctx: typer.Context, limit: int = 10):
     
     for job in jobs:
         status_style = {
-            "pending": "yellow",
-            "running": "blue",
-            "completed": "green",
-            "failed": "red"
-        }.get(job["status"], "white")
+            JobStatus.PENDING: "yellow",
+            JobStatus.RUNNING: "blue",
+            JobStatus.COMPLETED: "green",
+            JobStatus.FAILED: "red",
+            JobStatus.CANCELLED: "dim white"
+        }.get(job.status, "white")
         
         table.add_row(
-            job["id"],
-            f"[{status_style}]{job['status']}[/{status_style}]",
-            job["model_name"],
-            job["created_at"]
+            job.id[:8], # Short ID
+            f"[{status_style}]{job.status}[/{status_style}]",
+            job.metadata.get("model", "N/A"),
+            job.created_at.strftime("%Y-%m-%d %H:%M:%S")
         )
         
     console.print(table)
@@ -203,25 +242,54 @@ def queue_list(ctx: typer.Context, limit: int = 10):
 @queue_app.command("inspect")
 def queue_inspect(ctx: typer.Context, job_id: str):
     """Inspect a specific job."""
-    queue: JobQueue = ctx.obj["queue"]
+    queue = ctx.obj["queue"]
+    # Provide full ID or try to find by short ID? 
+    # For now assume full ID or we Implement prefix search in queue
     job = queue.get_job(job_id)
+    
+    if not job:
+        # Fallback: list all and check prefixes (inefficient but helpful for CLI)
+        all_jobs = queue.list_jobs(limit=100)
+        for j in all_jobs:
+            if j.id.startswith(job_id):
+                job = j
+                break
     
     if not job:
         error_console.print(f"Job {job_id} not found.")
         raise typer.Exit(code=1)
         
-    console.print(f"\n🔍 Job Details: {job_id}", style="bold blue")
-    console.print(f"Status: {job['status']}")
-    console.print(f"Model: {job['model_name']}")
-    console.print(f"Dataset: {job['dataset_name']}")
-    console.print(f"Created: {job['created_at']}")
-    if job.get('started_at'):
-        console.print(f"Started: {job['started_at']}")
-    if job.get('completed_at'):
-        console.print(f"Completed: {job['completed_at']}")
+    console.print(f"\n🔍 Job Details: {job.id}", style="bold blue")
+    console.print(f"Status: {job.status}")
+    console.print(f"Priority: {job.priority}")
+    console.print(f"Command: {job.command}")
+    console.print(f"Created: {job.created_at}")
+    if job.started_at:
+        console.print(f"Started: {job.started_at}")
+    if job.completed_at:
+        console.print(f"Completed: {job.completed_at}")
     
-    console.print("\nConfiguration:", style="bold")
-    console.print(job['config'])
+    console.print("\nMetadata:", style="bold")
+    console.print(job.metadata)
+
+@queue_app.command("cancel")
+def queue_cancel(ctx: typer.Context, job_id: str):
+    """Cancel a pending job."""
+    queue = ctx.obj["queue"]
+    
+    # Try find by prefix
+    target_id = job_id
+    if len(job_id) < 36:
+         all_jobs = queue.list_jobs(limit=100)
+         for j in all_jobs:
+            if j.id.startswith(job_id):
+                target_id = j.id
+                break
+
+    if queue.cancel(target_id):
+        console.print(f"✅ Job {target_id} cancelled.", style="green")
+    else:
+        error_console.print(f"❌ Failed to cancel {job_id}. Job may be running, completed or not found.")
 
 @app.command("run-worker")
 def run_worker(
@@ -229,8 +297,16 @@ def run_worker(
     loop_interval: Annotated[float, typer.Option("--interval", "-i", help="Polling interval")] = 5.0
 ):
     """Start a worker process to consume jobs from the queue."""
-    agent: UGROAgent = ctx.obj["agent"]
-    agent.process_queue(loop_interval=loop_interval)
+    # New Implementation using Scheduler
+    queue = ctx.obj["queue"]
+    config = ctx.obj["config"]
+    
+    console.print("👷 Starting Worker...", style="bold green")
+    
+    tracker = ResourceTracker(cluster_config=config.get('cluster', {}))
+    scheduler = Scheduler(queue=queue, resource_tracker=tracker, poll_interval=loop_interval)
+    
+    scheduler.loop()
 
 
 # Daemon Management Group
@@ -434,8 +510,215 @@ def test_setup(
             console.print("  ❌ GPU: detection failed", style="red")
 
 
+
 def main():
     app()
 
 if __name__ == "__main__":
     main()
+
+
+# =============================================================================
+# HPO (Hyperparameter Optimization) Command Group
+# =============================================================================
+
+hpo_app = typer.Typer(help="Hyperparameter optimization (HPO) commands")
+app.add_typer(hpo_app, name="hpo")
+
+
+@hpo_app.command("sweep")
+def hpo_sweep(
+    ctx: typer.Context,
+    study_name: Annotated[str, typer.Option("--study-name", "-s", help="Unique study name")] = "ugro-sweep",
+    search_space: Annotated[str, typer.Option("--search-space", "-c", help="Path to search space YAML")] = "config/llama_lora_hpo.yaml",
+    n_trials: Annotated[int, typer.Option("--n-trials", "-n", help="Number of trials")] = 50,
+    parallel_jobs: Annotated[int, typer.Option("--parallel-jobs", "-j", help="Concurrent trials")] = 4,
+    algorithm: Annotated[str, typer.Option("--algorithm", "-a", help="Algorithm: tpe, asha, hyperband, pbt")] = "tpe",
+    scheduler: Annotated[Optional[str], typer.Option("--scheduler", help="Scheduler: asha, hyperband, pbt")] = None,
+    ray_address: Annotated[Optional[str], typer.Option("--ray-address", help="Ray cluster address")] = None,
+    ray_gpu_per_trial: Annotated[float, typer.Option("--ray-gpu", help="GPU fraction per trial")] = 1.0,
+    storage_backend: Annotated[str, typer.Option("--storage", help="Optuna storage URI")] = "sqlite:///ugro_hpo.db",
+    tracking_uri: Annotated[Optional[str], typer.Option("--tracking-uri", help="MLflow tracking URI")] = None,
+    wandb_project: Annotated[Optional[str], typer.Option("--wandb-project", help="W&B project name")] = None,
+    export_best: Annotated[Optional[str], typer.Option("--export-best", help="Export best config to YAML")] = None,
+    save_trials_csv: Annotated[Optional[str], typer.Option("--save-trials", help="Save all trials to CSV")] = None,
+    model_id: Annotated[str, typer.Option("--model", "-m", help="Model ID for training")] = "unsloth/tinyllama-bnb-4bit",
+    dataset: Annotated[str, typer.Option("--dataset", "-d", help="Dataset name")] = "wikitext",
+    max_steps: Annotated[int, typer.Option("--max-steps", help="Max training steps per trial")] = 500,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Validate config without running")] = False,
+):
+    """Execute distributed hyperparameter optimization sweep.
+    
+    Uses Ray Tune with Optuna's multivariate TPE sampler for efficient
+    hyperparameter search with optional early stopping via ASHA scheduler.
+    
+    Example:
+        ugro hpo sweep --study-name llama-lora --n-trials 100 --parallel-jobs 8
+    """
+    from pathlib import Path
+    
+    try:
+        from ugro.hpo.config import HPOConfig, OptimizerAlgorithm
+        from ugro.hpo.search_space import (
+            load_search_space_yaml,
+            parse_parameter_bounds,
+            parse_objectives,
+        )
+        from ugro.hpo.objective import LoRAFinetuningObjective
+        from ugro.hpo.optimizer import UGROOptimizer
+    except ImportError as e:
+        error_console.print(f"❌ HPO dependencies not installed: {e}")
+        error_console.print("💡 Install with: pixi add -e hpo 'ray[tune]' optuna mlflow")
+        raise typer.Exit(code=1)
+    
+    # Load and validate search space
+    search_space_path = Path(search_space)
+    if not search_space_path.exists():
+        error_console.print(f"❌ Search space not found: {search_space}")
+        raise typer.Exit(code=1)
+    
+    console.print(f"📊 Loading search space: {search_space}", style="bold blue")
+    config_dict = load_search_space_yaml(search_space)
+    bounds = parse_parameter_bounds(config_dict)
+    objectives = parse_objectives(config_dict)
+    
+    console.print(f"   Parameters: {len(bounds)}")
+    for b in bounds:
+        console.print(f"      • {b.name}: {b.type} [{b.min} - {b.max}]" if b.type != "categorical" else f"      • {b.name}: {b.choices}")
+    
+    if dry_run:
+        console.print("\n✅ Dry run complete - config is valid", style="green")
+        return
+    
+    # Create HPO config
+    hpo_config = HPOConfig(
+        study_name=study_name,
+        search_space=bounds,
+        objectives=objectives,
+        algorithm=OptimizerAlgorithm(algorithm),
+        scheduler_type=scheduler,
+        n_trials=n_trials,
+        parallel_jobs=parallel_jobs,
+        ray_address=ray_address,
+        ray_gpu_per_trial=ray_gpu_per_trial,
+        storage_backend=storage_backend,
+        tracking_uri=tracking_uri,
+        wandb_project=wandb_project,
+        export_best=export_best,
+        save_trials_csv=save_trials_csv,
+    )
+    
+    # Create objective function
+    console.print(f"\n🎯 Creating objective: {model_id} on {dataset}", style="bold blue")
+    objective = LoRAFinetuningObjective(
+        model_id=model_id,
+        dataset_name=dataset,
+        max_steps=max_steps,
+        use_mlflow=tracking_uri is not None,
+    )
+    
+    # Run optimization
+    console.print(f"\n🚀 Starting HPO: {n_trials} trials, {parallel_jobs} parallel", style="bold green")
+    console.print(f"   Storage: {storage_backend}")
+    if tracking_uri:
+        console.print(f"   Tracking: {tracking_uri}")
+    
+    optimizer = UGROOptimizer(hpo_config, objective)
+    
+    try:
+        results = optimizer.optimize()
+        
+        console.print("\n✅ HPO Complete!", style="bold green")
+        console.print(f"\n📈 Best Results:")
+        console.print(f"   Trials: {results.get('n_trials', 'N/A')}")
+        
+        best_config = results.get("best_config", {})
+        console.print("\n   Best Parameters:")
+        for k, v in best_config.items():
+            console.print(f"      {k}: {v}")
+        
+        best_metrics = results.get("best_metrics", {})
+        console.print("\n   Best Metrics:")
+        for k, v in best_metrics.items():
+            if isinstance(v, float):
+                console.print(f"      {k}: {v:.6f}")
+            else:
+                console.print(f"      {k}: {v}")
+        
+        if export_best:
+            console.print(f"\n   Config exported to: {export_best}")
+        
+    except Exception as e:
+        error_console.print(f"❌ HPO failed: {e}")
+        raise typer.Exit(code=1)
+
+
+@hpo_app.command("analyze")
+def hpo_analyze(
+    storage_backend: Annotated[str, typer.Option("--storage", "-s", help="Optuna storage URI")] = "sqlite:///ugro_hpo.db",
+    study_name: Annotated[str, typer.Option("--study-name", "-n", help="Study name to analyze")] = "ugro-sweep",
+    output_dir: Annotated[Optional[str], typer.Option("--output", "-o", help="Output directory for charts")] = None,
+):
+    """Analyze HPO study results with visualizations.
+    
+    Generates parameter importance analysis, trial progression plots,
+    and optimization history visualization.
+    """
+    try:
+        from ugro.hpo.analysis import analyze_hpo_results
+    except ImportError as e:
+        error_console.print(f"❌ Analysis dependencies not installed: {e}")
+        error_console.print("💡 Install with: pixi add optuna matplotlib pandas")
+        raise typer.Exit(code=1)
+    
+    console.print(f"📊 Analyzing study: {study_name}", style="bold blue")
+    
+    try:
+        results = analyze_hpo_results(
+            storage_backend=storage_backend,
+            study_name=study_name,
+            output_dir=output_dir,
+        )
+        
+        console.print("\n✅ Analysis complete!", style="green")
+        if output_dir:
+            console.print(f"   Charts saved to: {output_dir}")
+        
+    except Exception as e:
+        error_console.print(f"❌ Analysis failed: {e}")
+        raise typer.Exit(code=1)
+
+
+@hpo_app.command("export-best")
+def hpo_export_best(
+    storage_backend: Annotated[str, typer.Option("--storage", "-s", help="Optuna storage URI")] = "sqlite:///ugro_hpo.db",
+    study_name: Annotated[str, typer.Option("--study-name", "-n", help="Study name")] = "ugro-sweep",
+    output: Annotated[str, typer.Option("--output", "-o", help="Output YAML path")] = "config/best_params.yaml",
+):
+    """Export best hyperparameters from study to YAML.
+    
+    Useful for extracting optimal configuration after HPO completes.
+    """
+    try:
+        from ugro.hpo.analysis import export_best_config
+    except ImportError as e:
+        error_console.print(f"❌ Export dependencies not installed: {e}")
+        raise typer.Exit(code=1)
+    
+    console.print(f"📤 Exporting best config from: {study_name}", style="bold blue")
+    
+    try:
+        best_params = export_best_config(
+            storage_backend=storage_backend,
+            study_name=study_name,
+            output_path=output,
+        )
+        
+        console.print(f"\n✅ Exported to: {output}", style="green")
+        console.print("\nBest Parameters:")
+        for k, v in best_params.items():
+            console.print(f"   {k}: {v}")
+        
+    except Exception as e:
+        error_console.print(f"❌ Export failed: {e}")
+        raise typer.Exit(code=1)

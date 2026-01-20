@@ -94,6 +94,21 @@ flask = ">=2.3.0"
 
 
 # ============================================================================
+# HPO (Hyperparameter Optimization) Feature
+# ============================================================================
+
+[feature.hpo.pypi-dependencies]
+ray = { version = ">=2.9.0", extras = ["tune"] }
+optuna = ">=3.4.0"
+mlflow = ">=2.9.0"
+wandb = ">=0.16.0"
+peft = ">=0.7.0"
+datasets = ">=2.16.0"
+matplotlib = ">=3.8.0"
+pandas = ">=2.1.0"
+
+
+# ============================================================================
 # Environments
 # ============================================================================
 
@@ -101,8 +116,10 @@ flask = ">=2.3.0"
 default = { features = [], solve-group = "default" }
 cuda = { features = ["cuda"], solve-group = "default" }
 monitor = { features = ["monitor"], solve-group = "default" }
-test = { features = ["test", "cpu"] }
+test = { features = ["test", "cpu", "monitor", "hpo"] }
 cpu = { features = ["cpu"] }
+hpo = { features = ["hpo", "cuda"], solve-group = "default" }
+
 
 
 # ============================================================================

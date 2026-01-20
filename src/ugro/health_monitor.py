@@ -34,7 +34,35 @@ if TYPE_CHECKING:
 from .cluster import Cluster
 from .cluster_state import ClusterStateManager, NodeState
 from .result_aggregator import ResultAggregator
+from .cluster import Cluster
+from .cluster_state import ClusterStateManager, NodeState
+from .result_aggregator import ResultAggregator
 
+# Prometheus Metrics
+try:
+    from prometheus_client import Gauge, start_http_server, REGISTRY
+
+    def get_or_create_gauge(name, documentation, labelnames):
+        try:
+            return Gauge(name, documentation, labelnames)
+        except ValueError:
+            # If metric already exists (e.g. during tests), use the existing one
+            # REGISTRY._collector_to_names maps collector -> [names]
+            for collector, names in REGISTRY._collector_to_names.items():
+                if name in names:
+                    return collector
+            raise
+
+    # Define Metrics
+    GPU_UTIL = get_or_create_gauge("ugro_gpu_utilization_percent", "GPU Utilization %", ["node", "gpu_index"])
+    GPU_MEM_USED = get_or_create_gauge("ugro_gpu_mem_used_bytes", "GPU Memory Used (Bytes)", ["node", "gpu_index"])
+    SYS_CPU = get_or_create_gauge("ugro_system_cpu_percent", "System CPU Utilization %", ["node"])
+    SYS_MEM = get_or_create_gauge("ugro_system_memory_percent", "System Memory Utilization %", ["node"])
+    NODE_HEALTH = get_or_create_gauge("ugro_node_health_score", "Aggregated Node Health Score", ["node"])
+    PROMETHEUS_AVAILABLE = True
+except ImportError:
+    PROMETHEUS_AVAILABLE = False
+    
 # Type aliases for better readability
 HealthScore: TypeAlias = float
 NodeName: TypeAlias = str
@@ -588,6 +616,22 @@ class AdaptiveHealthMonitor:
                 self._safe_extract_metrics(process_metrics)
             )
             
+            
+            # Update Prometheus Metrics if available
+            if PROMETHEUS_AVAILABLE:
+                try:
+                    # System
+                    SYS_CPU.labels(node=node_name).set(self._safe_extract_metric(system_metrics, "cpu_util", 0.0))
+                    SYS_MEM.labels(node=node_name).set(self._safe_extract_metric(system_metrics, "memory_usage", 0.0))
+                    NODE_HEALTH.labels(node=node_name).set(health_score)
+                    
+                    # GPU (assuming 1 GPU per worker for now as per current metrics struct)
+                    # If multi-gpu per node support is added, iteration is needed.
+                    GPU_UTIL.labels(node=node_name, gpu_index="0").set(self._safe_extract_metric(gpu_metrics, "utilization", 0.0))
+                    GPU_MEM_USED.labels(node=node_name, gpu_index="0").set(self._safe_extract_metric(gpu_metrics, "memory_used", 0.0) * 1024 * 1024) # MB to Bytes
+                except Exception as pe:
+                    self.logger.warning(f"Failed to update prometheus metrics for {node_name}: {pe}")
+
             return HealthMetrics(
                 node_name=node_name,
                 timestamp=datetime.now(),
