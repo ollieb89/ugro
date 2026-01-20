@@ -1,268 +1,205 @@
-#!/usr/bin/env python3
-"""
-UGRO Agent: Core GPU Cluster Orchestrator
+"""Main UGRO orchestration agent"""
 
-Handles distributed training coordination, health monitoring, and job management
-across a personal-scale GPU cluster.
-"""
-
-import os
-import sys
-import json
-import time
-import uuid
-import signal
-import logging
-import subprocess
-from datetime import datetime
+from typing import Dict, List, Optional
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+import json
+from datetime import datetime
+import subprocess
+import time
 
-from src.config import UGROConfig, load_config
-
-
-class JobStatus:
-    """Job status constants"""
-    PENDING = "pending"
-    RUNNING = "running" 
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
+from src.config import load_config, expand_paths
+from src.ssh_utils import SSHClient
+from src.cluster import Cluster
+from src.job import Job, JobStatus
 
 class UGROAgent:
-    """Main UGRO agent for cluster orchestration"""
+    """Main orchestrator"""
     
-    def __init__(self, config_dir: Optional[Path] = None):
-        """Initialize UGRO agent
+    def __init__(self):
+        # Load configuration using simplified approach
+        config = load_config("cluster.yaml")
+        config = expand_paths(config)
         
-        Args:
-            config_dir: Path to configuration directory
-        """
-        self.config = load_config(config_dir)
-        self.logger = self._setup_logging()
+        # Handle cluster.yaml structure - merge cluster section with root level fields
+        if 'cluster' in config:
+            cluster_fields = config['cluster']
+            config.update(cluster_fields)
+        
+        self.config = config
+        self.cluster = Cluster(self.config)
+        self.results_dir = Path.home() / "projects" / "UGRO" / "data" / "experiments"
+        self.results_dir.mkdir(parents=True, exist_ok=True)
         
         # Job tracking
-        self.jobs_dir = Path(self.config.cluster_config.paths["experiments"])
-        self.jobs_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Initialize job registry
+        self.jobs_dir = self.results_dir
         self.job_registry_file = self.jobs_dir / "job_registry.json"
         self.job_registry = self._load_job_registry()
-        
-        self.logger.info("UGRO Agent initialized")
-        self.logger.info(f"Cluster: {self.config.cluster_config.name}")
-        self.logger.info(f"Workers: {len(self.config.cluster_config.workers)} nodes")
     
-    def _setup_logging(self) -> logging.Logger:
-        """Setup logging configuration"""
-        log_config = self.config.cluster_config.logging
-        log_level = getattr(logging, log_config.get("level", "INFO"))
-        
-        # Create logger
-        logger = logging.getLogger("ugro")
-        logger.setLevel(log_level)
-        
-        # Create formatter
-        formatter = logging.Formatter(
-            log_config.get("format", "[%(asctime)s] %(name)s - %(levelname)s - %(message)s")
-        )
-        
-        # Console handler
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(log_level)
-        console_handler.setFormatter(formatter)
-        logger.addHandler(console_handler)
-        
-        # File handler
-        log_file = Path(log_config.get("file", "logs/agent.log"))
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-        
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setLevel(log_level)
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-        
-        return logger
-    
-    def _load_job_registry(self) -> Dict[str, Any]:
+    def _load_job_registry(self) -> Dict:
         """Load job registry from disk"""
         if self.job_registry_file.exists():
             try:
                 with open(self.job_registry_file, 'r') as f:
                     return json.load(f)
-            except Exception as e:
-                self.logger.warning(f"Failed to load job registry: {e}")
+            except Exception:
+                pass
         
         return {"jobs": {}, "last_updated": str(datetime.now())}
     
-    def _save_job_registry(self) -> None:
+    def _save_job_registry(self):
         """Save job registry to disk"""
         self.job_registry["last_updated"] = str(datetime.now())
         
         try:
             with open(self.job_registry_file, 'w') as f:
                 json.dump(self.job_registry, f, indent=2)
-        except Exception as e:
-            self.logger.error(f"Failed to save job registry: {e}")
+        except Exception:
+            pass
     
-    def _create_job_dir(self, job_name: str) -> Path:
-        """Create job directory"""
-        job_dir = self.jobs_dir / job_name
-        job_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Create subdirectories
-        (job_dir / "logs").mkdir(exist_ok=True)
-        (job_dir / "checkpoints").mkdir(exist_ok=True)
-        (job_dir / "tensorboard").mkdir(exist_ok=True)
-        
-        return job_dir
-    
-    def _simulate_gpu_check(self, worker_name: str) -> Tuple[bool, str]:
-        """Simulate GPU health check (placeholder for real implementation)"""
-        # In real implementation, this would SSH to worker and check GPU status
-        import random
-        
-        # Simulate 90% success rate for demo
-        if random.random() < 0.9:
-            gpu_model = "RTX 4070" if "1" in worker_name else "RTX 3070 Ti"
-            return True, f"GPU ({gpu_model}) healthy, memory available"
-        else:
-            return False, "GPU not responding or CUDA error"
-    
-    def _simulate_training_launch(self, job_params: Dict[str, Any]) -> bool:
-        """Simulate training launch (placeholder for real implementation)"""
-        job_name = job_params["job_name"]
-        
-        # Create job directory
-        job_dir = self._create_job_dir(job_name)
-        
-        # Register job
-        job_id = str(uuid.uuid4())
-        self.job_registry["jobs"][job_name] = {
-            "id": job_id,
-            "status": JobStatus.RUNNING,
-            "created_at": str(datetime.now()),
-            "started_at": str(datetime.now()),
-            "parameters": job_params,
-            "directory": str(job_dir),
-            "workers": [w.name for w in self.config.cluster_config.workers]
-        }
-        self._save_job_registry()
-        
-        # Simulate training process
-        self.logger.info(f"Launching training job '{job_name}' on {len(self.config.cluster_config.workers)} workers")
-        
-        # In real implementation, this would:
-        # 1. SSH to each worker
-        # 2. Start distributed training processes
-        # 3. Monitor progress
-        
-        return True
-    
-    def check_cluster_health(self) -> Dict[str, Dict[str, Any]]:
-        """Check health status of all cluster nodes
-        
-        Returns:
-            Dict mapping node names to health status
-        """
-        health_status = {}
-        
-        # Check master node
-        health_status["master"] = {
-            "healthy": True,
-            "message": "Master node healthy",
-            "timestamp": str(datetime.now())
-        }
-        
-        # Check worker nodes
-        for worker in self.config.cluster_config.workers:
-            is_healthy, message = self._simulate_gpu_check(worker.name)
-            
-            health_status[worker.name] = {
-                "healthy": is_healthy,
-                "message": message,
-                "gpu_model": worker.hardware["gpu_model"],
-                "vram_gb": worker.hardware["vram_gb"],
-                "timestamp": str(datetime.now())
-            }
-        
-        return health_status
+    def check_cluster_health(self) -> Dict[str, Dict]:
+        """Check health of all nodes"""
+        return self.cluster.check_health()
     
     def launch_training(
         self,
         job_name: str,
         model: str,
         dataset: str,
-        epochs: int,
-        learning_rate: float,
-        verbose: bool = False
+        epochs: int = 1,
+        learning_rate: float = 0.0002,
+        verbose: bool = False,
     ) -> bool:
-        """Launch distributed training job
+        """Launch distributed training"""
         
-        Args:
-            job_name: Unique job identifier
-            model: Model name/path
-            dataset: Dataset name
-            epochs: Number of training epochs
-            learning_rate: Learning rate
-            verbose: Enable verbose logging
-            
-        Returns:
-            True if launch successful, False otherwise
-        """
-        self.logger.info(f"Launching training job: {job_name}")
+        print(f"\n{'='*60}")
+        print(f"UGRO: Launching Distributed Training")
+        print(f"{'='*60}")
+        print(f"Job: {job_name}")
+        print(f"Model: {model}")
+        print(f"Dataset: {dataset}")
+        print(f"Epochs: {epochs}\n")
         
-        # Validate job name uniqueness
-        if job_name in self.job_registry["jobs"]:
-            self.logger.error(f"Job '{job_name}' already exists")
+        # Validate cluster
+        print("🔍 Checking cluster...")
+        health = self.check_cluster_health()
+        
+        if not all(h['healthy'] for h in health.values()):
+            print("❌ Cluster health check failed!")
             return False
         
-        # Prepare job parameters
-        job_params = {
-            "job_name": job_name,
-            "model": model,
-            "dataset": dataset,
-            "epochs": epochs,
-            "learning_rate": learning_rate,
-            "verbose": verbose,
-            "num_workers": len(self.config.cluster_config.workers)
-        }
+        print("✓ All nodes healthy\n")
         
-        # Launch training
-        success = self._simulate_training_launch(job_params)
+        # Check if job already exists
+        if job_name in self.job_registry["jobs"]:
+            print(f"❌ Job '{job_name}' already exists")
+            return False
+        
+        # Create job
+        job = Job(
+            name=job_name,
+            model=model,
+            dataset=dataset,
+            epochs=epochs,
+            learning_rate=learning_rate,
+            results_dir=self.results_dir
+        )
+        
+        # Get worker names
+        worker_names = [worker['name'] for worker in self.cluster.get_all_workers()]
+        
+        # Start job
+        if not job.start(worker_names):
+            print(f"❌ Failed to start job '{job_name}'")
+            return False
+        
+        # Register job
+        self.job_registry["jobs"][job_name] = {
+            "id": job.id,
+            "status": job.status,
+            "created_at": job.created_at.isoformat(),
+            "started_at": job.started_at.isoformat() if job.started_at else None,
+            "parameters": {
+                "model": model,
+                "dataset": dataset,
+                "epochs": epochs,
+                "learning_rate": learning_rate,
+                "verbose": verbose
+            },
+            "directory": str(job.result_dir),
+            "workers": worker_names
+        }
+        self._save_job_registry()
+        
+        print(f"🚀 Launching {len(worker_names)} ranks...\n")
+        
+        # Launch ranks
+        success = self._launch_ranks(job, verbose)
         
         if success:
-            self.logger.info(f"Training job '{job_name}' launched successfully")
-            
-            # Create a mock log file for demonstration
-            job_dir = self.jobs_dir / job_name
-            log_file = job_dir / "logs" / "training.log"
-            
-            with open(log_file, 'w') as f:
-                f.write(f"# Training Log for Job: {job_name}\n")
-                f.write(f"# Started: {datetime.now()}\n")
-                f.write(f"# Model: {model}\n")
-                f.write(f"# Dataset: {dataset}\n")
-                f.write(f"# Epochs: {epochs}\n")
-                f.write(f"# Learning Rate: {learning_rate}\n")
-                f.write(f"# Workers: {len(self.config.cluster_config.workers)}\n\n")
-                f.write("Training started...\n")
-                f.write("Epoch 1/1 - Step 1/100 - Loss: 2.5\n")
-                f.write("Epoch 1/1 - Step 2/100 - Loss: 2.3\n")
-                f.write("Epoch 1/1 - Step 3/100 - Loss: 2.1\n")
+            print(f"\n✅ Job {job_name} launched successfully!")
+            print(f"📁 Results: {job.result_dir}")
         else:
-            self.logger.error(f"Failed to launch training job '{job_name}'")
+            job.complete(success=False)
+            print(f"\n❌ Job {job_name} failed!")
+        
+        # Update job registry
+        if job_name in self.job_registry["jobs"]:
+            self.job_registry["jobs"][job_name]["status"] = job.status
+            if job.completed_at:
+                self.job_registry["jobs"][job_name]["completed_at"] = job.completed_at.isoformat()
+        self._save_job_registry()
         
         return success
     
-    def display_logs(self, job_name: str, rank: Optional[int] = None) -> None:
-        """Display training logs for a job
+    def _launch_ranks(self, job: Job, verbose: bool = False) -> bool:
+        """Launch training on all nodes"""
+        workers = self.cluster.get_all_workers()
         
-        Args:
-            job_name: Job name
-            rank: Specific worker rank to display logs for
-        """
+        # Simulate distributed training launch
+        # In real implementation, this would:
+        # 1. Copy training scripts to all workers
+        # 2. Start training processes with proper rank assignments
+        # 3. Monitor progress and handle failures
+        
+        print("📋 Launching training processes:")
+        
+        for i, worker in enumerate(workers):
+            worker_name = worker['name']
+            rank = worker['rank']
+            
+            print(f"  • Rank {rank} on {worker_name} ({worker['hardware']['gpu_model']})")
+            
+            # Update worker status
+            job.update_worker_status(worker_name, JobStatus.RUNNING, f"Training started as rank {rank}")
+            
+            # Simulate some training progress
+            if verbose:
+                print(f"    - Copying training scripts...")
+                print(f"    - Starting process with rank {rank}...")
+                print(f"    - Process started successfully")
+        
+        # Simulate training progress
+        print("\n🔄 Training progress:")
+        for epoch in range(1, job.epochs + 1):
+            # Simulate epoch training time
+            time.sleep(0.5)  # Simulate training time
+            
+            # Generate mock metrics
+            loss = 2.5 - (epoch * 0.3)  # Decreasing loss
+            accuracy = 0.6 + (epoch * 0.1)  # Increasing accuracy
+            epoch_time = 45.0 + (epoch * 2.0)  # Increasing time per epoch
+            
+            job.add_metric(epoch, loss, accuracy, epoch_time)
+            
+            print(f"  Epoch {epoch}/{job.epochs}: Loss={loss:.3f}, Accuracy={accuracy:.3f}, Time={epoch_time:.1f}s")
+        
+        # Mark job as completed
+        job.complete(success=True)
+        
+        return True
+    
+    def display_logs(self, job_name: str, rank: Optional[int] = None):
+        """Display logs for a job"""
         if job_name not in self.job_registry["jobs"]:
             print(f"❌ Job '{job_name}' not found")
             return
@@ -294,12 +231,8 @@ class UGROAgent:
         except Exception as e:
             print(f"❌ Error reading logs: {e}")
     
-    def display_results(self, job_name: str) -> None:
-        """Display results summary for a job
-        
-        Args:
-            job_name: Job name
-        """
+    def display_results(self, job_name: str):
+        """Display results for a job"""
         if job_name not in self.job_registry["jobs"]:
             print(f"❌ Job '{job_name}' not found")
             return
@@ -310,43 +243,63 @@ class UGROAgent:
         print("=" * 60)
         print(f"Status: {job_info['status']}")
         print(f"Created: {job_info['created_at']}")
-        print(f"Model: {job_info['parameters']['model']}")
-        print(f"Dataset: {job_info['parameters']['dataset']}")
-        print(f"Epochs: {job_info['parameters']['epochs']}")
-        print(f"Learning Rate: {job_info['parameters']['learning_rate']}")
+        
+        params = job_info['parameters']
+        print(f"Model: {params['model']}")
+        print(f"Dataset: {params['dataset']}")
+        print(f"Epochs: {params['epochs']}")
+        print(f"Learning Rate: {params['learning_rate']}")
         print(f"Workers: {len(job_info['workers'])}")
         
-        # Simulate results (in real implementation, this would read from training output)
-        if job_info['status'] == JobStatus.COMPLETED:
-            print(f"\n✅ Training completed successfully!")
-            print(f"Final Loss: 0.85")
-            print(f"Training Time: 2h 15m")
-            print(f"GPU Utilization: 87%")
-            print(f"Samples Processed: 10,000")
-        elif job_info['status'] == JobStatus.RUNNING:
-            print(f"\n🔄 Training in progress...")
-            print(f"Current Epoch: 1/1")
-            print(f"Current Loss: 1.2")
-            print(f"Elapsed Time: 45m")
-        else:
-            print(f"\n❌ Training failed or was cancelled")
-        
+        # Try to load job for detailed metrics
         job_dir = Path(job_info["directory"])
+        metadata_file = job_dir / "metadata.json"
+        
+        if metadata_file.exists():
+            try:
+                job = Job.load_from_metadata(metadata_file)
+                
+                if job.status == JobStatus.COMPLETED:
+                    print(f"\n✅ Training completed successfully!")
+                    if job.metrics['loss']:
+                        print(f"Final Loss: {job.metrics['loss'][-1]:.4f}")
+                    if job.metrics['accuracy']:
+                        print(f"Final Accuracy: {job.metrics['accuracy'][-1]:.4f}")
+                    if job.metrics['epoch_times']:
+                        total_time = sum(job.metrics['epoch_times'])
+                        print(f"Total Training Time: {total_time:.1f}s ({total_time/60:.1f}m)")
+                elif job.status == JobStatus.RUNNING:
+                    print(f"\n🔄 Training in progress...")
+                    if job.metrics['loss']:
+                        print(f"Current Loss: {job.metrics['loss'][-1]:.4f}")
+                else:
+                    print(f"\n❌ Training failed or was cancelled")
+                    if job.errors:
+                        print("Errors:")
+                        for error in job.errors[-3:]:  # Show last 3 errors
+                            print(f"  • {error}")
+                
+            except Exception:
+                pass
+        
         print(f"\n📁 Output Directory: {job_dir}")
         print(f"📊 TensorBoard: {job_dir / 'tensorboard'}")
         print(f"💾 Checkpoints: {job_dir / 'checkpoints'}")
     
-    def display_status(self) -> None:
-        """Display current cluster status"""
-        print(f"\n🖥️  Cluster Status: {self.config.cluster_config.name}")
+    def display_status(self):
+        """Display cluster status"""
+        cluster_info = self.cluster.get_cluster_info()
+        
+        print(f"\n🖥️  Cluster Status: {cluster_info['name']}")
         print("=" * 60)
-        print(f"Location: {self.config.cluster_config.location}")
-        print(f"Description: {self.config.cluster_config.description}")
+        print(f"Location: {cluster_info['location']}")
+        print(f"Description: {cluster_info['description']}")
         
         # Worker status
-        print(f"\n🔧 Workers ({len(self.config.cluster_config.workers)} nodes):")
-        for worker in self.config.cluster_config.workers:
-            print(f"  • {worker.name}: {worker.hardware['gpu_model']} ({worker.hardware['vram_gb']}GB VRAM)")
+        workers = cluster_info['workers']
+        print(f"\n🔧 Workers ({len(workers)} nodes):")
+        for worker in workers:
+            print(f"  • {worker['name']}: {worker['hardware']['gpu_model']} ({worker['hardware']['vram_gb']}GB VRAM)")
         
         # Active jobs
         active_jobs = [name for name, job in self.job_registry["jobs"].items() 
@@ -355,7 +308,8 @@ class UGROAgent:
         print(f"\n🚀 Active Jobs: {len(active_jobs)}")
         for job_name in active_jobs:
             job_info = self.job_registry["jobs"][job_name]
-            print(f"  • {job_name}: {job_info['status']} (started {job_info['started_at']})")
+            started_at = job_info.get('started_at', 'Unknown')
+            print(f"  • {job_name}: {job_info['status']} (started {started_at})")
         
         # Recent jobs
         recent_jobs = list(self.job_registry["jobs"].keys())[-5:] if self.job_registry["jobs"] else []
@@ -363,50 +317,17 @@ class UGROAgent:
         print(f"\n📋 Recent Jobs:")
         for job_name in recent_jobs:
             job_info = self.job_registry["jobs"][job_name]
-            status_emoji = "✅" if job_info["status"] == JobStatus.COMPLETED else "❌" if job_info["status"] == JobStatus.FAILED else "🔄"
-            print(f"  • {job_name} {status_emoji} {job_info['status']}")
+            status = job_info['status']
+            emoji = "✅" if status == JobStatus.COMPLETED else "❌" if status == JobStatus.FAILED else "🔄"
+            print(f"  • {job_name} {emoji} {status}")
         
         # Storage info
         print(f"\n💾 Storage:")
-        print(f"  • Experiments: {self.jobs_dir}")
+        print(f"  • Experiments: {self.results_dir}")
         print(f"  • Total Jobs: {len(self.job_registry['jobs'])}")
     
     def get_job_status(self, job_name: str) -> Optional[str]:
-        """Get status of a specific job
-        
-        Args:
-            job_name: Job name
-            
-        Returns:
-            Job status string or None if not found
-        """
+        """Get status of a specific job"""
         if job_name in self.job_registry["jobs"]:
             return self.job_registry["jobs"][job_name]["status"]
         return None
-    
-    def cancel_job(self, job_name: str) -> bool:
-        """Cancel a running job
-        
-        Args:
-            job_name: Job name
-            
-        Returns:
-            True if cancelled successfully, False otherwise
-        """
-        if job_name not in self.job_registry["jobs"]:
-            self.logger.error(f"Job '{job_name}' not found")
-            return False
-        
-        job_info = self.job_registry["jobs"][job_name]
-        
-        if job_info["status"] not in [JobStatus.RUNNING, JobStatus.PENDING]:
-            self.logger.warning(f"Job '{job_name}' is not running")
-            return False
-        
-        # Update job status
-        job_info["status"] = JobStatus.CANCELLED
-        job_info["completed_at"] = str(datetime.now())
-        self._save_job_registry()
-        
-        self.logger.info(f"Job '{job_name}' cancelled")
-        return True

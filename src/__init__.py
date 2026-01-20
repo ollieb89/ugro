@@ -8,12 +8,13 @@ __version__ = "0.1.0"
 __author__ = "Oliver Buitelaar"
 __email__ = "buitelaar@gmail.com"
 
-from .config import UGROConfig, load_config
+from .config import load_config, expand_paths, get_config_dir
 from .agent import UGROAgent, JobStatus
 
 __all__ = [
-    "UGROConfig",
-    "load_config", 
+    "load_config",
+    "expand_paths", 
+    "get_config_dir",
     "UGROAgent",
     "JobStatus"
 ]
