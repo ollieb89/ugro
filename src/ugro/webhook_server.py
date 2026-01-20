@@ -196,7 +196,7 @@ class WebhookServer:
         except Exception as e:
             self.logger.error(f"Error during synchronization: {e}")
     
-    def run(self, host: str = '0.0.0.0', port: int = 8080, debug: bool = False):
+    def run(self, host: str = '0.0.0.0', port: int = 8099, debug: bool = False):
         """Run the webhook server."""
         self.logger.info(f"Starting webhook server on {host}:{port}")
         self.app.run(host=host, port=port, debug=debug)
@@ -209,7 +209,7 @@ def main():
     parser = argparse.ArgumentParser(description='UGRO Webhook Server')
     parser.add_argument('--config', default='config/cluster.yaml', help='Configuration file path')
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind to')
-    parser.add_argument('--port', type=int, default=8080, help='Port to bind to')
+    parser.add_argument('--port', type=int, default=8099, help='Port to bind to')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     
     args = parser.parse_args()

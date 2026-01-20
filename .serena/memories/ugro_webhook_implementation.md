@@ -68,7 +68,7 @@ Successfully implemented automatic synchronization workflow for UGRO cluster tha
 
 1. Set `webhook.repository` and `webhook.secret` in `config/cluster.yaml`
 2. Run `sudo ./scripts/setup_webhook_service.sh` to install service
-3. Configure GitHub webhook pointing to `http://<master-ip>:8080/webhook/github`
+3. Configure GitHub webhook pointing to `http://<master-ip>:8099/webhook/github`
 4. Test with `python3 scripts/sync_to_workers.py --dry-run`
 
 ### Files Created/Modified

@@ -60,7 +60,7 @@ sudo systemctl start ugro-webhook.service
 2. Navigate to **Settings** → **Webhooks**
 3. Click **Add webhook**
 4. Configure:
-   - **Payload URL**: `http://<master-ip>:8080/webhook/github`
+   - **Payload URL**: `http://<master-ip>:8099/webhook/github`
    - **Content type**: `application/json`
    - **Secret**: Same string you set in step 2
    - **Events**: Select "Just the `push` event"
@@ -72,7 +72,7 @@ sudo systemctl start ugro-webhook.service
 
 ```bash
 # Check if webhook server is running
-curl http://localhost:8080/health
+curl http://localhost:8099/health
 
 # Should return:
 # {"status": "healthy", "service": "ugro-webhook"}
@@ -115,7 +115,7 @@ webhook:
   # Webhook server configuration
   server:
     host: "0.0.0.0"  # Listen on all interfaces
-    port: 8080       # Port for webhook endpoint
+    port: 8099       # Port for webhook endpoint
     
   # Synchronization settings
   sync:
@@ -282,10 +282,10 @@ tail -f logs/webhook.log
 
 ```bash
 # Webhook server health
-curl http://localhost:8080/health
+curl http://localhost:8099/health
 
 # Test webhook endpoint
-curl -X POST http://localhost:8080/webhook/github \
+curl -X POST http://localhost:8099/webhook/github \
   -H "Content-Type: application/json" \
   -H "X-GitHub-Event: ping" \
   -d '{"zen": "non-blocking"}'

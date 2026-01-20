@@ -844,7 +844,7 @@ COPY . .
 RUN python -m app.model_loader
 
 # Expose port
-EXPOSE 8080
+EXPOSE 8099
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
@@ -852,7 +852,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # Run application
 CMD ["gunicorn", "--worker-class", "uvicorn.workers.UvicornWorker", \
-     "--workers", "4", "--bind", "0.0.0.0:8080", "app.main:app"]
+     "--workers", "4", "--bind", "0.0.0.0:8099", "app.main:app"]
 ''',
             'kubernetes_deployment': '''
 apiVersion: apps/v1
@@ -873,7 +873,7 @@ spec:
       - name: assistant
         image: ai-assistant:latest
         ports:
-        - containerPort: 8080
+        - containerPort: 8099
         resources:
           requests:
             memory: "2Gi"
@@ -889,12 +889,12 @@ spec:
         livenessProbe:
           httpGet:
             path: /health
-            port: 8080
+            port: 8099
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /ready
-            port: 8080
+            port: 8099
           periodSeconds: 5
 ---
 apiVersion: v1
@@ -906,7 +906,7 @@ spec:
     app: ai-assistant
   ports:
   - port: 80
-    targetPort: 8080
+    targetPort: 8099
   type: LoadBalancer
 ---
 apiVersion: autoscaling/v2

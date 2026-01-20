@@ -413,7 +413,7 @@ class MetricsCollector:
 
 **Output: Web dashboard** (optional, can build later)
 ```
-http://localhost:8080/experiments
+http://localhost:8099/experiments
 ├── Experiment 1: llama-7b on wikitext
 │   ├── Duration: 2h 45m
 │   ├── Final Loss: 3.102

@@ -13,6 +13,7 @@ version = "0.1.0"
 [dependencies]
 python = "3.10.*"
 python-dotenv = ">=1.2.1,<2"
+flask = ">=3.1.2,<4"
 
 [feature.cuda.system-requirements]
 cuda = "12.0"

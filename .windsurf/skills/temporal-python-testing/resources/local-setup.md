@@ -47,7 +47,7 @@ services:
       - TEMPORAL_ADDRESS=temporal:7233
       - TEMPORAL_CORS_ORIGINS=http://localhost:3000
     ports:
-      - "8080:8080"
+      - "8099:8099"
 
 volumes:
   postgres_data:
@@ -66,7 +66,7 @@ docker-compose ps
 docker-compose logs -f temporal
 
 # Access Temporal Web UI
-open http://localhost:8080
+open http://localhost:8099
 
 # Stop server
 docker-compose down
@@ -499,7 +499,7 @@ async def test_workflow_with_breakpoint(workflow_env):
 ### Temporal Web UI
 
 ```bash
-# Access Web UI at http://localhost:8080
+# Access Web UI at http://localhost:8099
 # - View workflow executions
 # - Inspect event history
 # - Replay workflows

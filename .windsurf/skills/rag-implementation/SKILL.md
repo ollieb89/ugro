@@ -233,7 +233,7 @@ vectorstore = Pinecone(index, embeddings.embed_query, "text")
 import weaviate
 from langchain.vectorstores import Weaviate
 
-client = weaviate.Client("http://localhost:8080")
+client = weaviate.Client("http://localhost:8099")
 
 vectorstore = Weaviate(client, "Document", "content", embeddings)
 ```
