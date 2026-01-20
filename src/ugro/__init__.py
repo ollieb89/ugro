@@ -13,6 +13,7 @@ __email__ = "buitelaar@gmail.com"
 # Import main components using relative imports
 from .agent import UGROAgent
 from .cluster import Cluster
+from .cluster_state import ClusterState, ClusterStateManager, JobState, NodeState
 from .config import expand_paths, get_config_dir, load_config
 from .job import Job, JobStatus
 from .ssh_utils import SSHClient
@@ -29,7 +30,11 @@ __all__ = [
     # Core classes
     "UGROAgent",
     "Cluster",
+    "ClusterState",
+    "ClusterStateManager",
     "Job",
+    "JobState",
     "JobStatus",
+    "NodeState",
     "SSHClient",
 ]

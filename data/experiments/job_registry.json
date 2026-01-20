@@ -39,7 +39,26 @@
         "gpu1",
         "gpu2"
       ]
+    },
+    "first_training": {
+      "id": "c605e369-8288-401d-833a-c168bc748294",
+      "status": "completed",
+      "created_at": "2026-01-20T11:50:36.277968",
+      "started_at": "2026-01-20T11:50:36.278064",
+      "parameters": {
+        "model": "unsloth/tinyllama-bnb-4bit",
+        "dataset": "wikitext",
+        "epochs": 1,
+        "learning_rate": 0.0002,
+        "verbose": false
+      },
+      "directory": "/home/ollie/Development/Tools/ugro/data/experiments/first_training",
+      "workers": [
+        "gpu1",
+        "gpu2"
+      ],
+      "completed_at": "2026-01-20T11:50:36.779352"
     }
   },
-  "last_updated": "2026-01-20 05:32:36.922187"
+  "last_updated": "2026-01-20 11:50:36.779449"
 }

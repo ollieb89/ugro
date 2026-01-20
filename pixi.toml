@@ -16,7 +16,7 @@ python-dotenv = ">=1.2.1,<2"
 flask = ">=3.1.2,<4"
 
 [feature.cuda.system-requirements]
-cuda = "12.0"
+cuda = "12.1"
 
 
 # ============================================================================
@@ -53,6 +53,13 @@ torchaudio = { version = "==2.7.1", index = "https://download.pytorch.org/whl/cp
 gcc_linux-64 = "12.*"
 gxx_linux-64 = "12.*"
 git = ">=2.51.0,<3"
+libcusparse = ">=12.1"
+libcusparse-dev = ">=12.1"
+cusparselt = ">=0.6"
+cusparselt-dev = ">=0.6"
+nccl = ">=2.18"
+cudnn = ">=8.9"
+cuda-runtime = ">=12.1"
 
 [feature.cuda.pypi-dependencies]
 torch = { version = "==2.7.1", index = "https://download.pytorch.org/whl/cu128" }

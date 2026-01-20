@@ -1,0 +1,37 @@
+{
+  "id": "c605e369-8288-401d-833a-c168bc748294",
+  "name": "first_training",
+  "model": "unsloth/tinyllama-bnb-4bit",
+  "dataset": "wikitext",
+  "epochs": 1,
+  "learning_rate": 0.0002,
+  "batch_size": 1,
+  "status": "completed",
+  "created_at": "2026-01-20T11:50:36.277968",
+  "started_at": "2026-01-20T11:50:36.278064",
+  "completed_at": "2026-01-20T11:50:36.779352",
+  "workers": [
+    "gpu1",
+    "gpu2"
+  ],
+  "worker_status": {
+    "gpu1": "completed",
+    "gpu2": "completed"
+  },
+  "metrics": {
+    "loss": [
+      2.2
+    ],
+    "accuracy": [
+      0.7
+    ],
+    "learning_rate": [
+      0.0002
+    ],
+    "epoch_times": [
+      47.0
+    ]
+  },
+  "errors": [],
+  "result_dir": "/home/ollie/Development/Tools/ugro/data/experiments/first_training"
+}

@@ -3,63 +3,186 @@
 from __future__ import annotations
 
 import json
-import subprocess
+import logging
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .cluster import Cluster
+from .cluster_state import ClusterStateManager, NodeState
 from .config import expand_paths, load_config
 from .job import Job, JobStatus
-from .ssh_utils import SSHClient
 
 if TYPE_CHECKING:
     from typing import Any
 
 class UGROAgent:
     """Main orchestrator"""
-    
-    def __init__(self):
-        # Load configuration using simplified approach
-        config = load_config("cluster.yaml")
-        config = expand_paths(config)
-        
+ 
+    def __init__(
+        self,
+        config_name: str = "cluster.yaml",
+        config: dict[str, Any] | None = None,
+    ):
+        logger = logging.getLogger(__name__)
+        self.logger = logger
+
+        resolved_config: dict[str, Any] = config if config is not None else load_config(config_name)
+        resolved_config = expand_paths(resolved_config)
+
         # Handle cluster.yaml structure - merge cluster section with root level fields
-        if 'cluster' in config:
-            cluster_fields = config['cluster']
-            config.update(cluster_fields)
-        
-        self.config = config
+        if "cluster" in resolved_config and isinstance(resolved_config["cluster"], dict):
+            resolved_config.update(resolved_config["cluster"])
+
+        self.config = resolved_config
         self.cluster = Cluster(self.config)
-        self.results_dir = Path.home() / "projects" / "UGRO" / "data" / "experiments"
-        self.results_dir.mkdir(parents=True, exist_ok=True)
+
+        # Prefer configured experiment path; fall back to project-local default.
+        configured_experiments = (
+            self.config.get("paths", {}).get("experiments")
+            if isinstance(self.config.get("paths"), dict)
+            else None
+        )
+        if configured_experiments:
+            self.results_dir = Path(str(configured_experiments))
+        else:
+            self.results_dir = Path(__file__).parent.parent.parent / "data" / "experiments"
+
+        try:
+            self.results_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            logger.exception("Failed to create results directory: %s", self.results_dir)
+            raise
         
         # Job tracking
         self.jobs_dir = self.results_dir
         self.job_registry_file = self.jobs_dir / "job_registry.json"
         self.job_registry = self._load_job_registry()
+
+        self.cluster_state_manager = ClusterStateManager()
+        self._load_cluster_state()
+        self._sync_cluster_state_nodes()
+
+    def _load_cluster_state(self) -> None:
+        """Load cluster state from disk, logging failures."""
+        try:
+            self.cluster_state_manager.load()
+        except RuntimeError:
+            self.logger.exception("Failed to load cluster state")
+
+    def _persist_cluster_state(self) -> None:
+        """Persist cluster state to disk, logging failures."""
+        try:
+            self.cluster_state_manager.save()
+        except RuntimeError:
+            self.logger.exception("Failed to persist cluster state")
+
+    def _sync_cluster_state_nodes(self) -> None:
+        """Ensure cluster nodes are represented in state storage."""
+        state = self.cluster_state_manager.get_state()
+
+        master = self.config.get("master", {}) if isinstance(self.config, dict) else {}
+        master_name = master.get("hostname", "gpu-master")
+        if master_name not in state.nodes:
+            state.nodes[master_name] = NodeState(
+                ip=str(master.get("ip", "")),
+                gpu=str(master.get("gpu", "unknown")),
+                vram_gb=int(master.get("vram_gb", 0) or 0),
+                status="available",
+                running_job_id=None,
+            )
+
+        for worker in self.cluster.get_all_workers():
+            worker_name = worker.get("name")
+            if not worker_name:
+                continue
+            if worker_name in state.nodes:
+                continue
+            hardware = worker.get("hardware", {}) if isinstance(worker, dict) else {}
+            state.nodes[worker_name] = NodeState(
+                ip=str(worker.get("ip", "")),
+                gpu=str(hardware.get("gpu_model", "unknown")),
+                vram_gb=int(hardware.get("vram_gb", 0) or 0),
+                status="available",
+                running_job_id=None,
+            )
+
+        self._persist_cluster_state()
+
+    def _update_state_for_job_start(
+        self,
+        job_name: str,
+        model: str,
+        worker_names: list[str],
+        worker_ranks: list[int],
+    ) -> None:
+        """Record job start and mark nodes as busy."""
+        self.cluster_state_manager.set_job(
+            job_name,
+            self.cluster_state_manager.build_job_state(
+                status="running",
+                ranks=worker_ranks,
+                model=model,
+                gpu_nodes=worker_names,
+            ),
+        )
+
+        for worker_name in worker_names:
+            try:
+                self.cluster_state_manager.update_node_status(
+                    worker_name,
+                    status="busy",
+                    running_job_id=job_name,
+                )
+            except KeyError:
+                continue
+
+    def _update_state_for_job_end(self, job_name: str, status: str) -> None:
+        """Update job status and release nodes."""
+        try:
+            self.cluster_state_manager.update_job_status(job_name, status)
+        except KeyError:
+            return
+
+        job_state = self.cluster_state_manager.get_state().jobs.get(job_name)
+        if not job_state:
+            return
+
+        for worker_name in job_state.gpu_nodes:
+            try:
+                self.cluster_state_manager.update_node_status(
+                    worker_name,
+                    status="available",
+                    running_job_id=None,
+                )
+            except KeyError:
+                continue
     
     def _load_job_registry(self) -> dict[str, Any]:
         """Load job registry from disk"""
         if self.job_registry_file.exists():
             try:
-                with open(self.job_registry_file, 'r') as f:
+                with open(self.job_registry_file, "r", encoding="utf-8") as f:
                     return json.load(f)
-            except Exception:
-                pass
+            except (OSError, json.JSONDecodeError):
+                logging.getLogger(__name__).exception(
+                    "Failed to load job registry: %s", self.job_registry_file
+                )
         
         return {"jobs": {}, "last_updated": str(datetime.now())}
-    
-    def _save_job_registry(self):
+     
+    def _save_job_registry(self) -> None:
         """Save job registry to disk"""
         self.job_registry["last_updated"] = str(datetime.now())
         
         try:
-            with open(self.job_registry_file, 'w') as f:
+            with open(self.job_registry_file, "w", encoding="utf-8") as f:
                 json.dump(self.job_registry, f, indent=2)
-        except Exception:
-            pass
+        except OSError:
+            logging.getLogger(__name__).exception(
+                "Failed to save job registry: %s", self.job_registry_file
+            )
     
     def check_cluster_health(self) -> dict[str, dict[str, Any]]:
         """Check health of all nodes"""
@@ -110,12 +233,16 @@ class UGROAgent:
         )
         
         # Get worker names
-        worker_names = [worker['name'] for worker in self.cluster.get_all_workers()]
+        workers = self.cluster.get_all_workers()
+        worker_names = [worker['name'] for worker in workers]
+        worker_ranks = [worker.get("rank", index) for index, worker in enumerate(workers)]
         
         # Start job
         if not job.start(worker_names):
             print(f"❌ Failed to start job '{job_name}'")
             return False
+
+        self._update_state_for_job_start(job_name, model, worker_names, worker_ranks)
         
         # Register job
         self.job_registry["jobs"][job_name] = {
@@ -146,6 +273,8 @@ class UGROAgent:
         else:
             job.complete(success=False)
             print(f"\n❌ Job {job_name} failed!")
+
+        self._update_state_for_job_end(job_name, job.status)
         
         # Update job registry
         if job_name in self.job_registry["jobs"]:

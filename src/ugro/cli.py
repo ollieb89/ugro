@@ -42,8 +42,9 @@ def cli(ctx: click.Context) -> None:
         ugro results <name>  # Display results
     """
     ctx.ensure_object(dict)
-    ctx.obj["agent"] = UGROAgent()
-    ctx.obj["config"] = load_config()
+    config = load_config()
+    ctx.obj["config"] = config
+    ctx.obj["agent"] = UGROAgent(config=config)
 
 
 @cli.command()
@@ -140,7 +141,6 @@ def status(ctx: click.Context) -> None:
 def test_setup(ctx: click.Context, workers: tuple[str, ...]) -> None:
     """Test setup and connectivity for specific workers (e.g., w1, w2, gpu1)."""
     agent: UGROAgent = ctx.obj["agent"]
-    config: Mapping[str, Any] = ctx.obj["config"]
     
     click.echo("\n🧪 UGRO Setup Verification")
     click.echo("=" * 60)

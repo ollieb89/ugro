@@ -55,7 +55,7 @@ class Job:
         
         # Set up results directory
         if results_dir is None:
-            results_dir = Path.home() / "projects" / "UGRO" / "data" / "experiments"
+            results_dir = Path(__file__).parent.parent.parent / "data" / "experiments"
         
         self.result_dir = results_dir / name
         self.result_dir.mkdir(parents=True, exist_ok=True)
