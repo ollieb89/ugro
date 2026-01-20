@@ -19,7 +19,27 @@
         "gpu1",
         "gpu2"
       ]
+    },
+    "simplified-test": {
+      "id": "35ed4520-53a8-4be7-830e-bcc3a07e9239",
+      "status": "running",
+      "created_at": "2026-01-20 05:32:36.922178",
+      "started_at": "2026-01-20 05:32:36.922184",
+      "parameters": {
+        "job_name": "simplified-test",
+        "model": "unsloth/tinyllama-bnb-4bit",
+        "dataset": "wikitext",
+        "epochs": 1,
+        "learning_rate": 0.0002,
+        "verbose": false,
+        "num_workers": 2
+      },
+      "directory": "/home/ollie/Development/Tools/ugro/data/experiments/simplified-test",
+      "workers": [
+        "gpu1",
+        "gpu2"
+      ]
     }
   },
-  "last_updated": "2026-01-20 05:28:30.490976"
+  "last_updated": "2026-01-20 05:32:36.922187"
 }
