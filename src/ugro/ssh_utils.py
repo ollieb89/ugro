@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 import subprocess
 from pathlib import Path
@@ -40,6 +41,84 @@ class SSHClient:
             '-o', 'BatchMode=yes'
         ]
     
+    async def run_command_async(self, command: str, timeout: int = 30, use_env: bool = True) -> tuple[bool, str, str]:
+        """Run command on remote host asynchronously.
+        
+        Args:
+            command: Command to execute
+            timeout: Command timeout in seconds
+            use_env: Whether to use the environment prefix if defined
+            
+        Returns:
+            Tuple of (success, stdout, stderr)
+        """
+        cmd_list = self._build_ssh_command(command, use_env)
+        
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd_list,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            try:
+                stdout_bytes, stderr_bytes = await asyncio.wait_for(process.communicate(), timeout=timeout)
+                success = (process.returncode == 0)
+                return success, stdout_bytes.decode(), stderr_bytes.decode()
+                
+            except asyncio.TimeoutError:
+                try:
+                    process.kill()
+                    await process.communicate()
+                except ProcessLookupError:
+                    pass
+                return False, "", f"Command timed out after {timeout} seconds"
+                
+        except Exception as e:
+            return False, "", f"SSH error: {str(e)}"
+
+    def _build_ssh_command(self, command: str, use_env: bool) -> list[str]:
+        """Build the raw SSH command list."""
+        if use_env and self.env_command:
+            # Logic duplicated from synchronous method for consistency
+            # If we're using pixi, try to find it in common locations if standard command fails
+            if self.env_command.startswith("pixi run") and self.home_dir:
+                pixi_locations = [
+                    "pixi",  # Try PATH first
+                    f"{self.home_dir.rstrip('/')}/.pixi/bin/pixi",
+                    "~/.pixi/bin/pixi"
+                ]
+                # Construct a shell command that tries multiple pixi locations
+                pixi_check = " || ".join([f"command -v {loc}" for loc in pixi_locations])
+                if self.project_dir:
+                    # Change to project directory before running pixi
+                    # Handle environment flags if present
+                    if "-e" in self.env_command:
+                        # Extract environment name from "pixi run -e cuda"
+                        parts = self.env_command.split()
+                        if "-e" in parts and len(parts) > parts.index("-e") + 1:
+                            env = parts[parts.index("-e") + 1]
+                            command = f"PIXI_BIN=$({pixi_check} | head -n 1); cd {self.project_dir} && $PIXI_BIN run -e {env} -- {command}"
+                        else:
+                            command = f"PIXI_BIN=$({pixi_check} | head -n 1); cd {self.project_dir} && $PIXI_BIN run {command}"
+                    else:
+                        command = f"PIXI_BIN=$({pixi_check} | head -n 1); cd {self.project_dir} && $PIXI_BIN run {command}"
+                else:
+                    command = f"PIXI_BIN=$({pixi_check} | head -n 1); $PIXI_BIN run {command}"
+            else:
+                command = f"{self.env_command} {command}"
+
+        # Wrap command in a login shell to ensure PATH and other env vars are loaded
+        wrapped_command = f"bash -l -c '{command}'"
+
+        return [
+            self.ssh_executable,
+            f'-p{self.port}',
+            *self.ssh_options,
+            f'{self.user}@{self.host}',
+            wrapped_command
+        ]
+
     def _find_ssh_executable(self) -> str:
         """Find the SSH executable on the system."""
         # Try finding in PATH first
@@ -54,6 +133,7 @@ class SSHClient:
                 return path
                 
         return "ssh"  # Fallback to name and hope for the best at runtime
+
     
     def run_command(self, command: str, timeout: int = 30, use_env: bool = True) -> tuple[bool, str, str]:
         """Run command on remote host
@@ -133,15 +213,7 @@ class SSHClient:
         return success and "connection_test" in stdout
     
     def copy_file(self, local_path: str, remote_path: str) -> bool:
-        """Copy file to remote host
-        
-        Args:
-            local_path: Local file path
-            remote_path: Remote file path
-            
-        Returns:
-            True if copy successful, False otherwise
-        """
+        """Copy file to remote host"""
         scp_cmd = [
             'scp',
             '-P', str(self.port),
@@ -158,11 +230,83 @@ class SSHClient:
                 timeout=60,
                 check=False
             )
-            
             return result.returncode == 0
-            
-        except subprocess.TimeoutExpired:
+        except Exception:
             return False
+
+    async def copy_file_async(self, local_path: str, remote_path: str) -> bool:
+        """Copy file to remote host asynchronously."""
+        scp_cmd = [
+            'scp',
+            '-P', str(self.port),
+            *self.ssh_options,
+            local_path,
+            f'{self.user}@{self.host}:{remote_path}'
+        ]
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *scp_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await process.communicate()
+            return process.returncode == 0
+        except Exception:
+            return False
+
+    async def pull_file_async(self, remote_path: str, local_path: str) -> bool:
+        """Pull file from remote host asynchronously."""
+        scp_cmd = [
+            'scp',
+            '-P', str(self.port),
+            *self.ssh_options,
+            f'{self.user}@{self.host}:{remote_path}',
+            local_path
+        ]
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *scp_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await process.communicate()
+            return process.returncode == 0
+        except Exception:
+            return False
+
+    async def pull_dir_async(self, remote_path: str, local_path: str, include_pattern: str | None = None) -> bool:
+        """Pull directory from remote host asynchronously using rsync."""
+        # Ensure local directory exists
+        Path(local_path).mkdir(parents=True, exist_ok=True)
+        
+        # Use rsync for efficient directory pulling
+        # If remote_path doesn't end in /, rsync creates the directory inside local_path.
+        # We ensure it ends in / to sync contents if that's what's intended, 
+        # but here we usually want the specifically named directory.
+        
+        ssh_opts_str = " ".join(self.ssh_options)
+        rsync_cmd = [
+            'rsync',
+            '-avz',
+            '-e', f'{self.ssh_executable} -p {self.port} {ssh_opts_str}',
+        ]
+        
+        if include_pattern:
+            rsync_cmd.extend(['--include', include_pattern, '--exclude', '*'])
+            
+        rsync_cmd.extend([
+            f'{self.user}@{self.host}:{remote_path}',
+            local_path
+        ])
+        
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *rsync_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await process.communicate()
+            return process.returncode == 0
         except Exception:
             return False
     

@@ -16,6 +16,7 @@ from .cluster import Cluster
 from .cluster_state import ClusterState, ClusterStateManager, JobState, NodeState
 from .config import expand_paths, get_config_dir, load_config
 from .job import Job, JobStatus
+from .launch_coordinator import LaunchCoordinator
 from .ssh_utils import SSHClient
 
 __all__ = [
@@ -36,5 +37,6 @@ __all__ = [
     "JobState",
     "JobStatus",
     "NodeState",
+    "LaunchCoordinator",
     "SSHClient",
 ]

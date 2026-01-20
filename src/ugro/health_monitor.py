@@ -26,10 +26,14 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import IntEnum, StrEnum
-from typing import Any, Final, NoReturn, TypeAlias
+from typing import Any, Final, NoReturn, TypeAlias, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .ssh_utils import SSHClient
 
 from .cluster import Cluster
 from .cluster_state import ClusterStateManager, NodeState
+from .result_aggregator import ResultAggregator
 
 # Type aliases for better readability
 HealthScore: TypeAlias = float
@@ -105,8 +109,9 @@ class TrainingMetrics:
         util_score = self.gpu_util
         throughput_score = min(100, self.throughput_tokens_sec / 2)  # Scale throughput
         loss_penalty = max(0, 50 - self.training_loss) if self.training_loss > 1 else 0
-        
-        return min(100, (util_score + throughput_score) / 2 - loss_penalty)
+
+        raw_score = (util_score + throughput_score) / 2 - loss_penalty
+        return max(0.0, min(100.0, raw_score))
 
 
 @dataclass(frozen=True, slots=True)
@@ -432,6 +437,101 @@ class AdaptiveHealthMonitor:
             self.logger.warning(f"Failed to collect metrics from {len(exceptions)} nodes")
         
         return results
+    async def check_node_health(self, worker: dict[str, Any]) -> bool:
+        """Quick diagnostic of node as per Phase 2b specification."""
+        node_name = worker["name"]
+        
+        # Concurrent checks for speed
+        checks = {
+            "ssh_reachable": self.test_ssh(worker),
+            "gpu_available": self.test_gpu(worker),
+            "pytorch_ready": self._test_pytorch_import(worker),
+            "disk_space_ready": self._check_disk_space_ready(worker),
+            "ping_latency_ready": self._ping_latency_ready(worker),
+        }
+        
+        results = await asyncio.gather(*checks.values(), return_exceptions=True)
+        
+        # Map results back to names
+        check_results = dict(zip(checks.keys(), results))
+        
+        # Log failures
+        for name, result in check_results.items():
+            if isinstance(result, Exception) or result is False:
+                self.logger.warning(f"Node {node_name} check {name} failed: {result}")
+
+        # Requirement: 90% pass rate
+        success_count = sum(1 for r in results if r is True)
+        pass_rate = success_count / len(results)
+        
+        return pass_rate > 0.9
+
+    async def test_ssh(self, worker: dict[str, Any]) -> bool:
+        """Test SSH is reachable."""
+        node_name = worker["name"]
+        success, _, _ = await asyncio.get_event_loop().run_in_executor(
+            self._executor,
+            self.cluster.execute_on_worker,
+            node_name, "echo 'OK'", 5
+        )
+        return success
+
+    async def test_gpu(self, worker: dict[str, Any]) -> bool:
+        """Test GPU is working using nvidia-smi."""
+        node_name = worker["name"]
+        cmd = "nvidia-smi --query-gpu=count --format=csv,noheader"
+        success, stdout, _ = await asyncio.get_event_loop().run_in_executor(
+            self._executor,
+            self.cluster.execute_on_worker,
+            node_name, cmd, 5
+        )
+        try:
+            return success and int(stdout.strip()) > 0
+        except (ValueError, AttributeError):
+            return False
+
+    async def _test_pytorch_import(self, worker: dict[str, Any]) -> bool:
+        """Test if PyTorch can be imported and CUDA is available."""
+        node_name = worker["name"]
+        cmd = 'python3 -c "import torch; print(torch.cuda.is_available())"'
+        success, stdout, _ = await asyncio.get_event_loop().run_in_executor(
+            self._executor,
+            self.cluster.execute_on_worker,
+            node_name, cmd, 10
+        )
+        return success and "True" in stdout
+
+    async def _check_disk_space_ready(self, worker: dict[str, Any], min_gb: float = 1.0) -> bool:
+        """Check if there's enough disk space."""
+        node_name = worker["name"]
+        cmd = "df -BG / | tail -1 | awk '{print $4}' | sed 's/G//'"
+        success, stdout, _ = await asyncio.get_event_loop().run_in_executor(
+            self._executor,
+            self.cluster.execute_on_worker,
+            node_name, cmd, 5
+        )
+        try:
+            return success and float(stdout.strip()) > min_gb
+        except (ValueError, AttributeError):
+            return False
+
+    async def _ping_latency_ready(self, worker: dict[str, Any], max_ms: float = 100.0) -> bool:
+        """Check if network latency is within limits."""
+        node_name = worker["name"]
+        # Use simple ping from local to worker
+        cmd = f"ping -c 1 -W 1 {worker['ip']} | grep 'time=' | awk -F'time=' '{{print $2}}' | awk '{{print $1}}'"
+        
+        # Ping is local, run in executor
+        def run_ping():
+            try:
+                result = subprocess.check_output(cmd, shell=True, text=True)
+                return float(result.strip())
+            except:
+                return 999.0
+
+        latency = await asyncio.get_event_loop().run_in_executor(self._executor, run_ping)
+        return latency < max_ms
+
 
     async def _collect_node_metrics(self, worker: dict[str, Any]) -> HealthMetrics | None:
         """Collect comprehensive metrics from a single node.
@@ -448,10 +548,16 @@ class AdaptiveHealthMonitor:
         node_name = worker["name"]
         
         try:
+            # Phase 2b: Detailed health check
+            is_healthy = await self.check_node_health(worker)
+            
+            if not is_healthy:
+                self.logger.warning(f"Node {node_name} failed Phase 2b health checks")
+            
             # Use existing cluster health check as baseline
             health_status = self.cluster.check_health().get(node_name, {})
             
-            if not health_status.get("healthy", False):
+            if not health_status.get("healthy", False) and not is_healthy:
                 return None
             
             # Collect detailed metrics concurrently
@@ -894,6 +1000,8 @@ class TrainingMetricsCollector:
         self.cluster = cluster
         self.config = config or MetricsCollectorConfig()
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+
+        self._result_aggregator = ResultAggregator()
         
         # Storage for training metrics by job_id and rank
         self._metrics_storage: dict[JobID, dict[RankID, list[TrainingMetrics]]] = {}
@@ -916,12 +1024,20 @@ class TrainingMetricsCollector:
             "active_jobs": 0,
         }
 
-    async def start_collection(self, job_id: JobID, ranks: list[RankID]) -> None:
+    async def start_collection(
+        self, 
+        job_id: JobID, 
+        ranks: list[RankID],
+        workers: list[dict[str, Any]] | None = None,
+        ssh_clients: dict[str, SSHClient] | None = None
+    ) -> None:
         """Start collecting metrics for a specific training job.
         
         Args:
             job_id: Unique identifier for the training job
             ranks: List of distributed training ranks to monitor
+            workers: Optional list of workers for SSH syncing
+            ssh_clients: Optional SSH clients for sync
         """
         if job_id in self._collection_tasks:
             self.logger.warning(f"Metrics collection already active for job {job_id}")
@@ -932,7 +1048,7 @@ class TrainingMetricsCollector:
         
         # Start collection task
         self._collection_tasks[job_id] = asyncio.create_task(
-            self._collect_metrics_loop(job_id, ranks),
+            self._collect_metrics_loop(job_id, ranks, workers, ssh_clients),
             name=f"metrics_{job_id}"
         )
         
@@ -961,12 +1077,20 @@ class TrainingMetricsCollector:
         self._stats["active_jobs"] -= 1
         self.logger.info(f"Stopped metrics collection for job {job_id}")
 
-    async def _collect_metrics_loop(self, job_id: JobID, ranks: list[RankID]) -> NoReturn:
+    async def _collect_metrics_loop(
+        self, 
+        job_id: JobID, 
+        ranks: list[RankID],
+        workers: list[dict[str, Any]] | None = None,
+        ssh_clients: dict[str, SSHClient] | None = None
+    ) -> NoReturn:
         """Main collection loop for a specific job.
         
         Args:
             job_id: Unique identifier for the training job
             ranks: List of distributed training ranks to monitor
+            workers: Optional list of workers for SSH syncing
+            ssh_clients: Optional SSH clients for sync
         """
         self._running = True
         
@@ -974,10 +1098,14 @@ class TrainingMetricsCollector:
             start_time = time.time()
             
             try:
-                # Collect metrics from all ranks concurrently
+                # Sync metrics from workers if clients available
+                if workers and ssh_clients:
+                    await self._result_aggregator.sync_rank_metrics(job_id, workers, ssh_clients)
+
+                # Collect metrics from all ranks concurrently (reads synced per-rank files)
                 metrics = await self._collect_from_all_ranks(job_id, ranks)
                 
-                # Store metrics
+                # Store metrics in history and consolidate into main metrics.jsonl
                 self._store_metrics(job_id, metrics)
                 
                 # Check for performance issues
@@ -1078,60 +1206,56 @@ class TrainingMetricsCollector:
             raise
 
     async def _read_metrics_from_file(self, job_id: JobID, rank: RankID, node_name: str) -> TrainingMetrics | None:
-        """Read metrics from training metrics JSON file."""
+        """Read metrics from rank-specific metrics JSONL file."""
         try:
-            # Construct path to metrics file
-            metrics_path = f"/tmp/ugro_jobs/{job_id}/{self.config.metrics_file}"
+            # We look for the local rank-specific file pulled by sync_rank_metrics
+            paths = self._result_aggregator.ensure_job_layout(job_id)
+            rank_file = paths.job_dir / f"metrics_rank{rank}.jsonl"
             
-            # Read metrics file via SSH
-            success, stdout, stderr = await asyncio.get_event_loop().run_in_executor(
-                self._executor,
-                self.cluster.execute_on_worker,
-                node_name, f"cat {metrics_path}", self.config.collection_timeout
-            )
-            
-            if not success or not stdout.strip():
+            if not rank_file.exists():
                 return None
             
-            # Parse JSON metrics
             import json
-            metrics_data = json.loads(stdout.strip())
-            
-            return TrainingMetrics(
-                timestamp=datetime.now(),
-                job_id=job_id,
-                rank=rank,
-                gpu_util=float(metrics_data.get("gpu_util", 0)),
-                gpu_mem_used_gb=float(metrics_data.get("gpu_mem_used_gb", 0)),
-                training_loss=float(metrics_data.get("training_loss", 0)),
-                throughput_tokens_sec=float(metrics_data.get("throughput_tokens_sec", 0)),
-                gradient_norm=float(metrics_data.get("gradient_norm", 0)),
-                learning_rate=float(metrics_data.get("learning_rate", 0))
-            )
-            
-        except (json.JSONDecodeError, KeyError, ValueError) as e:
-            self.logger.debug(f"Failed to parse metrics file for rank {rank}: {e}")
+            with open(rank_file, "r", encoding="utf-8") as f:
+                line = f.readline().strip()
+                if not line:
+                    return None
+                    
+                metrics_data = json.loads(line)
+                
+                # Safety check
+                if str(metrics_data.get("job_id")) != str(job_id) or int(metrics_data.get("rank", -1)) != int(rank):
+                    return None
+
+                return TrainingMetrics(
+                    timestamp=datetime.now(),
+                    job_id=job_id,
+                    rank=rank,
+                    gpu_util=float(metrics_data.get("gpu_util", 0)),
+                    gpu_mem_used_gb=float(metrics_data.get("gpu_mem_used_gb", 0)),
+                    training_loss=float(metrics_data.get("training_loss", 0)),
+                    throughput_tokens_sec=float(metrics_data.get("throughput_tokens_sec", 0)),
+                    gradient_norm=float(metrics_data.get("gradient_norm", 0)),
+                    learning_rate=float(metrics_data.get("learning_rate", 0)),
+                )
+
+        except (json.JSONDecodeError, KeyError, ValueError, OSError) as e:
+            self.logger.debug(f"Failed to read rank file for rank {rank}: {e}")
             return None
 
     async def _parse_metrics_from_logs(self, job_id: JobID, rank: RankID, node_name: str) -> TrainingMetrics | None:
         """Parse metrics from training log files."""
         try:
-            # Construct path to log file
-            log_path = f"/tmp/ugro_jobs/{job_id}/{self.config.log_file}"
-            
-            # Read recent log lines via SSH
-            success, stdout, stderr = await asyncio.get_event_loop().run_in_executor(
-                self._executor,
-                self.cluster.execute_on_worker,
-                node_name, f"tail -50 {log_path}", self.config.collection_timeout
-            )
-            
-            if not success or not stdout.strip():
+            log_path = self._result_aggregator.rank_log_path(job_id, rank)
+            if not log_path.exists():
                 return None
-            
+
+            with open(log_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()[-50:]
+
             # Parse log lines for metrics (simplified pattern matching)
             metrics = {}
-            for line in stdout.strip().split("\n"):
+            for line in [line.strip() for line in lines if line.strip()]:
                 if "loss:" in line.lower():
                     try:
                         # Extract loss value
@@ -1218,6 +1342,24 @@ class TrainingMetricsCollector:
             
             # Update statistics
             self._stats["metrics_collected"] += 1
+
+        # Batch consolidate into central metrics.jsonl
+        if metrics_list:
+            payloads = [
+                {
+                    "timestamp": m.timestamp.isoformat(),
+                    "job_id": m.job_id,
+                    "rank": m.rank,
+                    "gpu_util": m.gpu_util,
+                    "gpu_mem_used_gb": m.gpu_mem_used_gb,
+                    "training_loss": m.training_loss,
+                    "throughput_tokens_sec": m.throughput_tokens_sec,
+                    "gradient_norm": m.gradient_norm,
+                    "learning_rate": m.learning_rate,
+                }
+                for m in metrics_list
+            ]
+            self._result_aggregator._consolidate_rank_metrics(job_id, payloads)
 
     async def _check_performance_alerts(self, job_id: JobID, metrics_list: list[TrainingMetrics]) -> None:
         """Check for performance issues and generate alerts."""

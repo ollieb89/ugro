@@ -4,8 +4,8 @@
 import asyncio
 import json
 import pytest
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock
+from datetime import datetime, timedelta
+from unittest.mock import MagicMock
 
 from src.ugro.health_monitor import (
     TrainingMetrics,
@@ -13,6 +13,8 @@ from src.ugro.health_monitor import (
     MetricsCollectorConfig,
     create_metrics_collector
 )
+
+from ugro.result_aggregator import ResultAggregator
 
 
 class TestTrainingMetrics:
@@ -61,14 +63,10 @@ class TestTrainingMetrics:
                 rank=0,
                 gpu_util=85.5,
                 gpu_mem_used_gb=-1.0,  # Invalid: negative
-                gpu_memory_total=16.0,
-                gpu_temperature=75.0,
-                gpu_power_usage=250.0,
-                cpu_utilization=45.0,
-                memory_usage=60.0,
-                disk_usage=40.0,
-                network_latency=1.5,
-                health_score=85.0
+                training_loss=2.1,
+                throughput_tokens_sec=156.7,
+                gradient_norm=1.8,
+                learning_rate=0.0002,
             )
     
     def test_efficiency_score_calculation(self):
@@ -148,7 +146,7 @@ class TestTrainingMetricsCollector:
             {"name": "gpu0", "ip": "192.168.1.10"},
             {"name": "gpu1", "ip": "192.168.1.11"}
         ]
-        cluster.execute_on_worker = AsyncMock()
+        cluster.execute_on_worker = MagicMock(return_value=(True, "", ""))
         return cluster
     
     @pytest.fixture
@@ -293,7 +291,7 @@ class TestTrainingMetricsCollector:
         rank = 0
         
         # Create old metrics
-        old_timestamp = datetime.now() - asyncio.sleep(25)  # 25 hours ago
+        old_timestamp = datetime.now() - timedelta(hours=25)
         old_metrics = TrainingMetrics(
             timestamp=old_timestamp,
             job_id=job_id,
@@ -340,26 +338,35 @@ class TestMetricsCollectionMethods:
         cluster.get_all_workers.return_value = [
             {"name": "gpu0", "ip": "192.168.1.10"}
         ]
+
+        # Note: TrainingMetricsCollector uses run_in_executor(self.cluster.execute_on_worker),
+        # so this must be a *sync* callable (MagicMock), not an AsyncMock.
+        cluster.execute_on_worker = MagicMock(return_value=(True, "", ""))
         
-        # Mock successful metrics file read
-        cluster.execute_on_worker = AsyncMock(return_value=(
-            True,
-            json.dumps({
+        return cluster
+    
+    @pytest.mark.asyncio
+    async def test_read_metrics_from_file(self, mock_cluster, tmp_path, monkeypatch):
+        """Test reading metrics from JSON file."""
+        monkeypatch.setenv("UGRO_DATA_DIR", str(tmp_path / "ugro_data"))
+
+        # Seed the metrics.jsonl file with an entry for this job/rank.
+        aggregator = ResultAggregator()
+        aggregator.append_metrics(
+            "test_job",
+            {
+                "timestamp": datetime.now().isoformat(),
+                "job_id": "test_job",
+                "rank": 0,
                 "gpu_util": 85.5,
                 "gpu_mem_used_gb": 12.3,
                 "training_loss": 2.1,
                 "throughput_tokens_sec": 156.7,
                 "gradient_norm": 1.8,
-                "learning_rate": 0.0002
-            }),
-            ""
-        ))
-        
-        return cluster
-    
-    @pytest.mark.asyncio
-    async def test_read_metrics_from_file(self, mock_cluster):
-        """Test reading metrics from JSON file."""
+                "learning_rate": 0.0002,
+            },
+        )
+
         config = MetricsCollectorConfig()
         collector = TrainingMetricsCollector(mock_cluster, config)
         
@@ -375,11 +382,11 @@ class TestMetricsCollectionMethods:
     async def test_estimate_metrics_from_gpu(self, mock_cluster):
         """Test estimating metrics from GPU utilization."""
         # Mock GPU query response
-        mock_cluster.execute_on_worker.return_value = (
+        mock_cluster.execute_on_worker = MagicMock(return_value=(
             True,
             "85.0,13312",  # 85% utilization, 13GB memory
             ""
-        )
+        ))
         
         config = MetricsCollectorConfig()
         collector = TrainingMetricsCollector(mock_cluster, config)

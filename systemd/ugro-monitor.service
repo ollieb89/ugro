@@ -1,0 +1,17 @@
+[Unit]
+Description=UGRO Cluster Health Monitoring Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=ollie
+WorkingDirectory=/home/ollie/Development/Tools/ugro
+Environment=PYTHONPATH=/home/ollie/Development/Tools/ugro/src
+ExecStart=/usr/bin/pixi run -e cuda python scripts/monitor_daemon.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/ollie/Development/Tools/ugro/logs/monitor_stdout.log
+StandardError=append:/home/ollie/Development/Tools/ugro/logs/monitor_stderr.log
+
+[Install]
+WantedBy=multi-user.target

@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .result_aggregator import ResultAggregator
+
 if TYPE_CHECKING:
     from typing import Any
 
@@ -32,7 +34,8 @@ class Job:
         epochs: int = 1,
         learning_rate: float = 0.0002,
         batch_size: int = 1,
-        results_dir: Path | None = None
+        results_dir: Path | None = None,
+        result_aggregator: ResultAggregator | None = None,
     ):
         """Initialize training job
         
@@ -44,6 +47,7 @@ class Job:
             learning_rate: Learning rate
             batch_size: Batch size per GPU
             results_dir: Directory for job results
+            result_aggregator: Result aggregator instance
         """
         self.id = str(uuid.uuid4())
         self.name = name
@@ -53,23 +57,18 @@ class Job:
         self.learning_rate = learning_rate
         self.batch_size = batch_size
         
-        # Set up results directory
-        if results_dir is None:
-            results_dir = Path(__file__).parent.parent.parent / "data" / "experiments"
+        self._result_aggregator = result_aggregator or ResultAggregator(base_dir=results_dir)
+        self._result_paths = self._result_aggregator.ensure_job_layout(name)
         
-        self.result_dir = results_dir / name
-        self.result_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Create subdirectories
-        (self.result_dir / "logs").mkdir(exist_ok=True)
-        (self.result_dir / "checkpoints").mkdir(exist_ok=True)
-        (self.result_dir / "tensorboard").mkdir(exist_ok=True)
+        self.result_dir = self._result_paths.job_dir
         
         # Job metadata
         self.status = JobStatus.PENDING
         self.created_at = datetime.now()
         self.started_at: datetime | None = None
         self.completed_at: datetime | None = None
+        
+        self._write_config_json()
         
         # Training metrics
         self.metrics = {
@@ -88,6 +87,19 @@ class Job:
         
         # Save initial job metadata
         self._save_metadata()
+    
+    def _write_config_json(self) -> None:
+        config_payload = {
+            "job_id": self.name,
+            "internal_id": self.id,
+            "model": self.model,
+            "dataset": self.dataset,
+            "epochs": self.epochs,
+            "learning_rate": self.learning_rate,
+            "batch_size": self.batch_size,
+            "created_at": self.created_at.isoformat(),
+        }
+        self._result_aggregator.write_job_config(self.name, config_payload)
     
     def start(self, workers: list[str]) -> bool:
         """Start the training job
@@ -155,6 +167,20 @@ class Job:
             log_msg += f", Time={epoch_time:.2f}s"
         
         self._log_message(log_msg)
+        
+        self._result_aggregator.append_metrics(
+            self.name,
+            {
+                "timestamp": datetime.now().isoformat(),
+                "job_id": self.name,
+                "epoch": epoch,
+                "loss": loss,
+                "accuracy": accuracy,
+                "epoch_time": epoch_time,
+                "learning_rate": self.learning_rate,
+            },
+        )
+        
         self._save_metadata()
     
     def add_error(self, error: str):
@@ -245,6 +271,12 @@ class Job:
         """
         return self.result_dir / "logs" / "training.log"
     
+    def get_rank_log_file(self, rank: int) -> Path:
+        return self._result_aggregator.rank_log_path(self.name, rank)
+    
+    def get_metrics_jsonl_file(self) -> Path:
+        return self._result_paths.metrics_jsonl
+    
     def get_checkpoint_dir(self) -> Path:
         """Get path to checkpoint directory
         
@@ -265,18 +297,27 @@ class Job:
         """Create initial training log file"""
         log_file = self.get_log_file()
         
-        with open(log_file, 'w') as f:
-            f.write(f"# Training Log for Job: {self.name}\n")
-            f.write(f"# Job ID: {self.id}\n")
-            f.write(f"# Started: {self.started_at}\n")
-            f.write(f"# Model: {self.model}\n")
-            f.write(f"# Dataset: {self.dataset}\n")
-            f.write(f"# Epochs: {self.epochs}\n")
-            f.write(f"# Learning Rate: {self.learning_rate}\n")
-            f.write(f"# Batch Size: {self.batch_size}\n")
-            f.write(f"# Workers: {', '.join(self.workers)}\n")
-            f.write("\n")
-            f.write("Training started...\n")
+        rank_log_file = self.get_rank_log_file(0)
+        
+        header_lines = [
+            f"# Training Log for Job: {self.name}\n",
+            f"# Job ID: {self.id}\n",
+            f"# Started: {self.started_at}\n",
+            f"# Model: {self.model}\n",
+            f"# Dataset: {self.dataset}\n",
+            f"# Epochs: {self.epochs}\n",
+            f"# Learning Rate: {self.learning_rate}\n",
+            f"# Batch Size: {self.batch_size}\n",
+            f"# Workers: {', '.join(self.workers)}\n",
+            "\n",
+            "Training started...\n",
+        ]
+        
+        with open(log_file, "w", encoding="utf-8") as f:
+            f.writelines(header_lines)
+        
+        with open(rank_log_file, "w", encoding="utf-8") as f:
+            f.writelines(header_lines)
     
     def _log_message(self, message: str):
         """Log message to training log file
@@ -285,10 +326,16 @@ class Job:
             message: Message to log
         """
         log_file = self.get_log_file()
+        rank_log_file = self.get_rank_log_file(0)
         
-        with open(log_file, 'a') as f:
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            f.write(f"[{timestamp}] {message}\n")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        line = f"[{timestamp}] {message}\n"
+        
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(line)
+        
+        with open(rank_log_file, "a", encoding="utf-8") as f:
+            f.write(line)
     
     def _save_metadata(self):
         """Save job metadata to JSON file"""

@@ -131,11 +131,11 @@ class TestCircuitBreaker:
         breaker = CircuitBreaker()
         
         # Record failures up to max
-        for _ in range(breaker.MAX_FAILURES):
+        for _ in range(breaker.MAX_FAILURES - 1):
             breaker.record_failure()
             assert not breaker.is_open()
         
-        # One more failure should open it
+        # Reaching MAX_FAILURES should open it
         breaker.record_failure()
         assert breaker.is_open()
         assert breaker.state.name == "OPEN"

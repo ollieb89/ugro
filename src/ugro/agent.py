@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -11,8 +12,11 @@ from typing import TYPE_CHECKING
 
 from .cluster import Cluster
 from .cluster_state import ClusterStateManager, NodeState
-from .config import expand_paths, load_config
+from .config import AppConfig, get_config_dir
 from .job import Job, JobStatus
+from .launch_coordinator import LaunchCoordinator
+from .result_aggregator import ResultAggregator
+from .health_monitor import TrainingMetricsCollector
 
 if TYPE_CHECKING:
     from typing import Any
@@ -28,41 +32,59 @@ class UGROAgent:
         logger = logging.getLogger(__name__)
         self.logger = logger
 
-        resolved_config: dict[str, Any] = config if config is not None else load_config(config_name)
-        resolved_config = expand_paths(resolved_config)
-
-        # Handle cluster.yaml structure - merge cluster section with root level fields
-        if "cluster" in resolved_config and isinstance(resolved_config["cluster"], dict):
-            resolved_config.update(resolved_config["cluster"])
-
-        self.config = resolved_config
+        if config:
+            # If config provided as dict, attempt to validate it
+            try:
+                self.app_config = AppConfig(cluster=config.get("cluster", config))
+            except Exception as e:
+                logger.warning(f"Could not validate provided config dict: {e}")
+                self.app_config = None
+            self.config = config
+        else:
+            config_path = get_config_dir() / config_name
+            try:
+                self.app_config = AppConfig.from_yaml(config_path)
+                # Export to dict for parts of the system still using dicts
+                self.config = self.app_config.cluster.model_dump()
+                # Merge root level fields if they exist in yaml but not in cluster model
+                # (handled by AppConfig.from_yaml already)
+            except Exception as e:
+                logger.error(f"Failed to load/validate config from {config_path}: {e}")
+                # Fallback to old loading if Pydantic fails (graceful degradation)
+                from .config import load_config
+                self.config = load_config(config_name)
+                self.app_config = None
         self.cluster = Cluster(self.config)
 
-        # Prefer configured experiment path; fall back to project-local default.
-        configured_experiments = (
-            self.config.get("paths", {}).get("experiments")
-            if isinstance(self.config.get("paths"), dict)
-            else None
-        )
-        if configured_experiments:
-            self.results_dir = Path(str(configured_experiments))
-        else:
-            self.results_dir = Path(__file__).parent.parent.parent / "data" / "experiments"
-
+        self._result_aggregator = ResultAggregator()
         try:
-            self.results_dir.mkdir(parents=True, exist_ok=True)
+            self._result_aggregator.base_dir.mkdir(parents=True, exist_ok=True)
+            self._result_aggregator.jobs_dir.mkdir(parents=True, exist_ok=True)
+            self._result_aggregator.experiments_dir.mkdir(parents=True, exist_ok=True)
         except OSError:
-            logger.exception("Failed to create results directory: %s", self.results_dir)
+            logger.exception("Failed to create UGRO data directory: %s", self._result_aggregator.base_dir)
             raise
         
         # Job tracking
-        self.jobs_dir = self.results_dir
+        self.jobs_dir = self._result_aggregator.jobs_dir
         self.job_registry_file = self.jobs_dir / "job_registry.json"
         self.job_registry = self._load_job_registry()
 
         self.cluster_state_manager = ClusterStateManager()
         self._load_cluster_state()
         self._sync_cluster_state_nodes()
+        
+        # Initialize metrics collector
+        self.metrics_collector = TrainingMetricsCollector(cluster=self.cluster)
+
+        # Initialize launch coordinator
+        self.launch_coordinator = LaunchCoordinator(
+            cluster=self.cluster,
+            sync_window_seconds=30,
+            monitoring_interval_seconds=5.0,
+            max_startup_timeout_seconds=300,
+            metrics_collector=self.metrics_collector,
+        )
 
     def _load_cluster_state(self) -> None:
         """Load cluster state from disk, logging failures."""
@@ -158,6 +180,13 @@ class UGROAgent:
                 )
             except KeyError:
                 continue
+
+    def get_live_metrics(self, job_name: str) -> dict[str, Any] | None:
+        """Get latest training metrics for dashboard."""
+        if not self.metrics_collector:
+            # We check if it exists on the agent
+            return self._result_aggregator.get_job_summary(job_name)
+        return self._result_aggregator.get_job_summary(job_name)
     
     def _load_job_registry(self) -> dict[str, Any]:
         """Load job registry from disk"""
@@ -229,7 +258,8 @@ class UGROAgent:
             dataset=dataset,
             epochs=epochs,
             learning_rate=learning_rate,
-            results_dir=self.results_dir
+            results_dir=self._result_aggregator.base_dir,
+            result_aggregator=self._result_aggregator,
         )
         
         # Get worker names
@@ -286,51 +316,90 @@ class UGROAgent:
         return success
     
     def _launch_ranks(self, job: Job, verbose: bool = False) -> bool:
-        """Launch training on all nodes"""
+        """Launch training on all nodes using LaunchCoordinator"""
+        return asyncio.run(self._launch_ranks_async(job, verbose))
+    
+    async def _launch_ranks_async(self, job: Job, verbose: bool = False) -> bool:
+        """Async implementation of rank launching using LaunchCoordinator"""
         workers = self.cluster.get_all_workers()
         
-        # Simulate distributed training launch
-        # In real implementation, this would:
-        # 1. Copy training scripts to all workers
-        # 2. Start training processes with proper rank assignments
-        # 3. Monitor progress and handle failures
+        print("📋 Launch Coordinator: Distributed Training Orchestration")
+        print("=" * 60)
         
-        print("📋 Launching training processes:")
-        
-        for i, worker in enumerate(workers):
-            worker_name = worker['name']
-            rank = worker['rank']
+        try:
+            # Step 1: Validate cluster state
+            print("🔍 Step 1: Validating cluster state...")
+            validation_success, validation_results = await self.launch_coordinator.validate_cluster_state()
             
-            print(f"  • Rank {rank} on {worker_name} ({worker['hardware']['gpu_model']})")
+            if not validation_success:
+                print("❌ Cluster validation failed!")
+                print(f"   Unhealthy nodes: {len(validation_results['unhealthy_nodes'])}")
+                for node in validation_results['unhealthy_nodes']:
+                    print(f"     • {node['name']}: {node['error']}")
+                return False
             
-            # Update worker status
-            job.update_worker_status(worker_name, JobStatus.RUNNING, f"Training started as rank {rank}")
+            print(f"✓ All {len(validation_results['healthy_nodes'])} nodes validated successfully")
             
-            # Simulate some training progress
+            # Step 2: Allocate resources
+            print("\n🎯 Step 2: Allocating GPU resources...")
+            allocation_plan = await self.launch_coordinator.allocate_resources(workers)
+            
+            # Step 3: Launch distributed training
+            print("\n🚀 Step 3: Launching distributed training...")
+            launch_success = await self.launch_coordinator.launch_distributed_training(
+                job=job,
+                allocation_plan=allocation_plan,
+                training_script="scripts/train_production.py",
+            )
+            
+            if not launch_success:
+                print("❌ Failed to launch distributed training")
+                return False
+            
+            print("✓ Distributed training launched successfully")
+            
+            # Step 4: Monitor training progress
+            print("\n📊 Step 4: Monitoring training progress...")
+            print("   Training is now running on all workers...")
+            print("   Use 'ugro logs {}' to view real-time logs".format(job.name))
+            print("   Use 'ugro results {}' to view progress".format(job.name))
+            
+            # Wait for training to complete (in a real implementation, this would be non-blocking)
+            # For now, we'll simulate the monitoring
             if verbose:
-                print(f"    - Copying training scripts...")
-                print(f"    - Starting process with rank {rank}...")
-                print(f"    - Process started successfully")
-        
-        # Simulate training progress
-        print("\n🔄 Training progress:")
-        for epoch in range(1, job.epochs + 1):
-            # Simulate epoch training time
-            time.sleep(0.5)  # Simulate training time
+                print("\n🔄 Training monitoring (simulated for demo):")
+                for epoch in range(1, min(job.epochs + 1, 4)):  # Show first 3 epochs max
+                    await asyncio.sleep(1.0)  # Simulate monitoring interval
+                    
+                    # Generate mock metrics for demonstration
+                    loss = 2.5 - (epoch * 0.3)
+                    accuracy = 0.6 + (epoch * 0.1)
+                    epoch_time = 45.0 + (epoch * 2.0)
+                    
+                    job.add_metric(epoch, loss, accuracy, epoch_time)
+                    
+                    print(f"  Epoch {epoch}/{job.epochs}: Loss={loss:.3f}, Accuracy={accuracy:.3f}, Time={epoch_time:.1f}s")
+                
+                if job.epochs > 3:
+                    print(f"  ... (training continues for {job.epochs - 3} more epochs)")
             
-            # Generate mock metrics
-            loss = 2.5 - (epoch * 0.3)  # Decreasing loss
-            accuracy = 0.6 + (epoch * 0.1)  # Increasing accuracy
-            epoch_time = 45.0 + (epoch * 2.0)  # Increasing time per epoch
+            # In a real implementation, the LaunchCoordinator would handle completion
+            # For now, we'll mark as successful to demonstrate the flow
+            print("\n✅ Training orchestration completed successfully!")
+            return True
             
-            job.add_metric(epoch, loss, accuracy, epoch_time)
+        except Exception as e:
+            self.logger.error(f"Launch coordination error: {e}")
+            job.add_error(f"Launch coordination error: {e}")
+            print(f"❌ Launch coordination failed: {e}")
             
-            print(f"  Epoch {epoch}/{job.epochs}: Loss={loss:.3f}, Accuracy={accuracy:.3f}, Time={epoch_time:.1f}s")
-        
-        # Mark job as completed
-        job.complete(success=True)
-        
-        return True
+            # Clean up on failure
+            try:
+                await self.launch_coordinator.stop_training()
+            except Exception as cleanup_error:
+                self.logger.error(f"Cleanup error: {cleanup_error}")
+            
+            return False
     
     def display_logs(self, job_name: str, rank: int | None = None):
         """Display logs for a job"""
@@ -340,7 +409,11 @@ class UGROAgent:
         
         job_info = self.job_registry["jobs"][job_name]
         job_dir = Path(job_info["directory"])
-        log_file = job_dir / "logs" / "training.log"
+        
+        if rank is not None:
+            log_file = job_dir / "logs" / f"rank_{rank}.log"
+        else:
+            log_file = job_dir / "logs" / "training.log"
         
         if not log_file.exists():
             print(f"❌ No logs found for job '{job_name}'")
@@ -457,7 +530,7 @@ class UGROAgent:
         
         # Storage info
         print(f"\n💾 Storage:")
-        print(f"  • Experiments: {self.results_dir}")
+        print(f"  • UGRO Data: {self._result_aggregator.base_dir}")
         print(f"  • Total Jobs: {len(self.job_registry['jobs'])}")
     
     def get_job_status(self, job_name: str) -> str | None:

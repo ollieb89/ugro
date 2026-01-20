@@ -19,7 +19,10 @@ from datasets import load_dataset
 from datetime import datetime
 import argparse
 import logging
+import time
 from pathlib import Path
+
+from ugro.metrics_emitter import MetricsEmitter
 
 
 # Setup logging
@@ -215,12 +218,16 @@ def train_epoch(
     world_size: int,
     logger,
     gradient_accumulation_steps: int = 8,
+    emitter: MetricsEmitter = None,
+    max_seq_length: int = 2048,
 ):
     """Train for one epoch with gradient accumulation."""
     
     model.train()
     total_loss = 0
     accumulated_steps = 0
+    last_grad_norm = 0.0
+    last_time = time.perf_counter()
     
     for step, batch in enumerate(dataloader):
         # Move batch to GPU
@@ -242,26 +249,45 @@ def train_epoch(
         
         # Optimizer step every N accumulation steps
         if (step + 1) % gradient_accumulation_steps == 0:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            last_grad_norm = float(torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0))
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad()
         
-        # Logging (rank 0 only)
-        if rank == 0 and (step + 1) % 10 == 0:
+        # Logging and metrics emission
+        if (step + 1) % 10 == 0:
             avg_loss = total_loss / (step + 1)
             lr = scheduler.get_last_lr()[0]
-            logger.info(
-                f"Epoch [{epoch+1}/{total_epochs}] "
-                f"Step [{step+1}/{len(dataloader)}] "
-                f"Loss: {avg_loss:.4f} "
-                f"LR: {lr:.2e}"
-            )
+            
+            # Calculate throughput (tokens per second)
+            current_time = time.perf_counter()
+            dt = current_time - last_time
+            throughput = (10 * max_seq_length) / dt if dt > 0 else 0.0
+            
+            if rank == 0:
+                logger.info(
+                    f"Epoch [{epoch+1}/{total_epochs}] "
+                    f"Step [{step+1}/{len(dataloader)}] "
+                    f"Loss: {avg_loss:.4f} "
+                    f"LR: {lr:.2e} "
+                    f"Throughput: {throughput:.2f} tokens/s"
+                )
+            
+            if emitter:
+                emitter.emit_step(
+                    step=step + 1,
+                    loss=avg_loss,
+                    lr=lr,
+                    grad_norm=last_grad_norm,
+                    throughput=throughput
+                )
+            
+            last_time = current_time
     
     # Synchronize loss across all ranks
     loss_tensor = torch.tensor(total_loss, device=torch.cuda.current_device())
     dist.all_reduce(loss_tensor)
-    avg_loss = loss_tensor.item() / world_size
+    avg_loss = loss_tensor.item() / (world_size * len(dataloader))
     
     if rank == 0:
         logger.info(f"Epoch {epoch+1} completed - Avg Loss: {avg_loss:.4f}")
@@ -356,21 +382,30 @@ def main(args):
     # Training loop
     best_loss = float("inf")
     
-    for epoch in range(args.num_epochs):
-        train_sampler.set_epoch(epoch)  # Shuffle differently each epoch
-        
-        epoch_loss = train_epoch(
-            model,
-            train_dataloader,
-            optimizer,
-            scheduler,
-            epoch,
-            args.num_epochs,
-            rank,
-            world_size,
-            logger,
-            gradient_accumulation_steps=args.gradient_accumulation_steps,
-        )
+    # Initialize MetricsEmitter with context manager for cleanup
+    with MetricsEmitter(
+        job_id=args.job_id,
+        metrics_dir=args.metrics_dir,
+        rank=rank,
+        enable_tensorboard=True
+    ) as emitter:
+        for epoch in range(args.num_epochs):
+            train_sampler.set_epoch(epoch)  # Shuffle differently each epoch
+            
+            epoch_loss = train_epoch(
+                model,
+                train_dataloader,
+                optimizer,
+                scheduler,
+                epoch,
+                args.num_epochs,
+                rank,
+                world_size,
+                logger,
+                gradient_accumulation_steps=args.gradient_accumulation_steps,
+                emitter=emitter,
+                max_seq_length=max_seq_length,
+            )
         
         # Save checkpoint
         if epoch_loss < best_loss:
@@ -439,6 +474,18 @@ if __name__ == "__main__":
         default="../checkpoints",
         type=str,
         help="Directory for checkpoints",
+    )
+    parser.add_argument(
+        "--job-id",
+        type=str,
+        required=True,
+        help="Unique ID for this training job",
+    )
+    parser.add_argument(
+        "--metrics-dir",
+        default=os.path.expanduser("~/ugro_data/jobs"),
+        type=str,
+        help="Directory where metrics will be saved",
     )
     
     args = parser.parse_args()

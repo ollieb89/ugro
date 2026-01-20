@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_STATE_FILE = "/etc/ugro/cluster_state.json"
+DEFAULT_STATE_FILE = Path.home() / ".ugro" / "cluster_state.json"
 ENV_STATE_FILE = "UGRO_STATE_FILE"
 
 
@@ -23,6 +23,8 @@ class NodeState:
     vram_gb: int
     status: str = "available"
     running_job_id: str | None = None
+    health_score: float = 100.0
+    last_check: str | None = None
 
 
 @dataclass(slots=True)
@@ -123,13 +125,19 @@ class ClusterStateManager:
         name: str,
         status: str,
         running_job_id: str | None = None,
+        health_score: float | None = None,
+        last_check: str | None = None,
     ) -> None:
-        """Update node status and running job."""
+        """Update node status and health metrics."""
         node = self.state.nodes.get(name)
         if node is None:
             raise KeyError(f"Node {name} not found")
         node.status = status
         node.running_job_id = running_job_id
+        if health_score is not None:
+            node.health_score = health_score
+        if last_check is not None:
+            node.last_check = last_check
         self.save()
 
     def remove_node(self, name: str) -> None:
