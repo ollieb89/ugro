@@ -1,4 +1,4 @@
-# UGRO: Quick Implementation Guide
+# ugro: Quick Implementation Guide
 ## From Setup to First Training Run
 
 ---
@@ -9,10 +9,10 @@
 # Run this on gpu-master to set up entire project
 bash -c '
 cd ~
-mkdir -p projects/UGRO/{src,config,scripts,data/{experiments,jobs},logs,tests,docs/examples,tools}
+mkdir -p Projects/ugro/{src,config,scripts,data/{experiments,jobs},logs,tests,docs/examples,tools}
 
 # Initialize git
-cd projects/UGRO
+cd Projects/ugro
 git init
 
 # Create all necessary files (see detailed sections below)
@@ -26,13 +26,13 @@ echo "Project initialized. Copy Python files and configs from guide."
 
 Create these files in order:
 
-### 1. Configuration Files (~/projects/UGRO/config/)
+### 1. Configuration Files (/home/ollie/Development/Tools/ugro/config/)
 
 - [ ] `cluster.yaml` — Your 3-node definition
 - [ ] `training_defaults.yaml` — Training parameters
 - [ ] `.gitignore` — Git ignore patterns
 
-### 2. Source Code (~/projects/UGRO/src/)
+### 2. Source Code (/home/ollie/Development/Tools/ugro/src/)
 
 - [ ] `__init__.py` — Empty
 - [ ] `__main__.py` — Entry point
@@ -48,7 +48,7 @@ Create these files in order:
 
 - [ ] `pyproject.toml` — Pixi/Poetry config
 
-### 4. Training Scripts (~/projects/UGRO/scripts/)
+### 4. Training Scripts (/home/ollie/Development/Tools/ugro/scripts/)
 
 - [ ] `train_production.py` — From your existing setup
 - [ ] `train_single_test.py` — From your existing setup
@@ -61,7 +61,7 @@ Create these files in order:
 
 ```bash
 # Run on gpu-master
-cd ~/projects/UGRO
+cd /home/ollie/Development/Tools/ugro
 
 # Create .gitignore
 cat > .gitignore << 'GITEOF'
@@ -96,7 +96,7 @@ echo "✓ Directory structure created. Now populate Python files..."
 ### File: `src/config.py`
 
 ```python
-"""Configuration management for UGRO"""
+"""Configuration management for ugro"""
 
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -104,7 +104,7 @@ import yaml
 import os
 
 def get_project_root() -> Path:
-    """Get UGRO project root directory"""
+    """Get ugro project root directory"""
     return Path(__file__).parent.parent
 
 def get_config_dir() -> Path:
@@ -468,7 +468,7 @@ class Job:
 ### File: `src/agent.py`
 
 ```python
-"""Main UGRO orchestration agent"""
+"""Main ugro orchestration agent"""
 
 import logging
 from pathlib import Path
@@ -483,7 +483,7 @@ from src.job import Job
 
 logger = logging.getLogger(__name__)
 
-class UGROAgent:
+class ugroAgent:
     """Main orchestration agent for GPU cluster"""
     
     def __init__(self):
@@ -524,7 +524,7 @@ class UGROAgent:
         """Launch distributed training across cluster"""
         
         print(f"\n{'='*70}")
-        print(f"UGRO: Launching Distributed Training")
+        print(f"ugro: Launching Distributed Training")
         print(f"{'='*70}")
         print(f"Job Name:      {job_name}")
         print(f"Model:         {model}")
@@ -750,7 +750,7 @@ def format_duration(seconds: int) -> str:
 
 ```python
 #!/usr/bin/env python3
-"""UGRO CLI - Command line interface"""
+"""ugro CLI - Command line interface"""
 
 import click
 import sys
@@ -766,12 +766,12 @@ logging.basicConfig(
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.agent import UGROAgent
+from src.agent import ugroAgent
 
 @click.group()
 @click.pass_context
 def cli(ctx):
-    """UGRO: Unified GPU Resource Orchestrator
+    """ugro: Unified GPU Resource Orchestrator
     
     Personal-scale GPU cluster management tool.
     
@@ -782,7 +782,7 @@ def cli(ctx):
       ugro status              # Show status
     """
     ctx.ensure_object(dict)
-    ctx.obj['agent'] = UGROAgent()
+    ctx.obj['agent'] = ugroAgent()
 
 @cli.command()
 @click.pass_context
@@ -873,7 +873,7 @@ if __name__ == '__main__':
 ### File: `src/__main__.py`
 
 ```python
-"""UGRO entry point"""
+"""ugro entry point"""
 
 from src.cli import main
 
@@ -886,7 +886,7 @@ if __name__ == "__main__":
 ## Testing Your Setup
 
 ```bash
-cd ~/projects/UGRO
+cd /home/ollie/Development/Tools/ugro
 
 # Test 1: Directory structure
 ls -la config/ src/ scripts/ data/
@@ -930,11 +930,11 @@ Copy your existing `train_production.py` and `train_single_test.py` to `scripts/
 
 ```bash
 # From your existing setup (if you have it)
-cp ~/path/to/train_production.py ~/projects/UGRO/scripts/
-cp ~/path/to/train_single_test.py ~/projects/UGRO/scripts/
+cp ~/path/to/train_production.py /home/ollie/Development/Tools/ugro/scripts/
+cp ~/path/to/train_single_test.py /home/ollie/Development/Tools/ugro/scripts/
 
 # Or create a basic one for testing
-cat > ~/projects/UGRO/scripts/train_production.py << 'EOF'
+cat > /home/ollie/Development/Tools/ugro/scripts/train_production.py << 'EOF'
 # Your training script here
 # This will be executed by torchrun on each node
 EOF
@@ -945,7 +945,7 @@ EOF
 ## Launch Your First Training
 
 ```bash
-cd ~/projects/UGRO
+cd /home/ollie/Development/Tools/ugro
 
 # Test cluster
 python3 -m src health

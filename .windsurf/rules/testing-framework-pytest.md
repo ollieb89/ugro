@@ -1,0 +1,6 @@
+---
+trigger: model_decision
+description: Specifies pytest as the testing framework for Python projects.
+globs: **/tests/*.py
+---
+- **Testing Framework:** `pytest`

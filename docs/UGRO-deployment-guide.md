@@ -372,7 +372,7 @@ python launch_distributed.py train_production.py --model unsloth/tinyllama-bnb-4
 
 ## 1.2 Health Check & Status Monitor
 
-Create `~/ugro_status.py`:
+Create `/home/ollie/Development/Tools/ugro_status.py`:
 
 ```python
 #!/usr/bin/env python3
@@ -468,8 +468,8 @@ if __name__ == "__main__":
 ```
 
 ```bash
-chmod +x ~/ugro_status.py
-python ~/ugro_status.py
+chmod +x /home/ollie/Development/Tools/ugro_status.py
+python /home/ollie/Development/Tools/ugro_status.py
 ```
 
 ---
@@ -478,7 +478,7 @@ python ~/ugro_status.py
 
 ## 2.1 Centralized TensorBoard Setup
 
-Create `~/ugro_tensorboard.sh`:
+Create `/home/ollie/Development/Tools/ugro_tensorboard.sh`:
 
 ```bash
 #!/bin/bash
@@ -496,8 +496,8 @@ tensorboard --logdir="$LOG_DIR" --port=6006 --bind_all
 ```
 
 ```bash
-chmod +x ~/ugro_tensorboard.sh
-bash ~/ugro_tensorboard.sh
+chmod +x /home/ollie/Development/Tools/ugro_tensorboard.sh
+bash /home/ollie/Development/Tools/ugro_tensorboard.sh
 ```
 
 ## 2.2 Unified Logging Aggregator
@@ -572,7 +572,7 @@ python ~/Development/Projects/ai-ml-pipeline/ai-cluster/scripts/aggregate_logs.p
 
 ## 3.1 Automatic Restart on Failure
 
-Create `~/ugro_watchdog.py`:
+Create `/home/ollie/Development/Tools/ugro_watchdog.py`:
 
 ```python
 #!/usr/bin/env python3
@@ -670,7 +670,7 @@ if __name__ == "__main__":
 cd ~/Development/Projects/ai-ml-pipeline/ai-cluster/scripts
 
 # Verify cluster health
-python ~/ugro_status.py
+python /home/ollie/Development/Tools/ugro_status.py
 
 # Launch training
 python launch_distributed.py \
@@ -770,7 +770,7 @@ torchrun --nnodes=3 --nproc_per_node=1 \
 # Run on master before launching production training
 
 # 1. Verify all nodes online
-python ~/ugro_status.py
+python /home/ollie/Development/Tools/ugro_status.py
 
 # 2. Check network latency
 ping -c 5 192.168.1.101
@@ -817,10 +817,10 @@ Monitor in separate terminals:
 
 ```bash
 # Terminal 1: Status
-watch -n 5 "python ~/ugro_status.py"
+watch -n 5 "python /home/ollie/Development/Tools/ugro_status.py"
 
 # Terminal 2: TensorBoard
-bash ~/ugro_tensorboard.sh
+bash /home/ollie/Development/Tools/ugro_tensorboard.sh
 
 # Terminal 3: Aggregate logs
 watch -n 30 "python ~/Development/Projects/ai-ml-pipeline/ai-cluster/scripts/aggregate_logs.py"
@@ -875,14 +875,14 @@ For now, this UGRO setup provides:
 
 ```bash
 # Morning: Check cluster health
-python ~/ugro_status.py
+python /home/ollie/Development/Tools/ugro_status.py
 
 # Start training
 cd ~/Development/Projects/ai-ml-pipeline/ai-cluster/scripts
 python launch_distributed.py train_production.py --epochs 3
 
 # Monitor in another terminal
-bash ~/ugro_tensorboard.sh
+bash /home/ollie/Development/Tools/ugro_tensorboard.sh
 # Browse: http://localhost:6006
 
 # Check logs

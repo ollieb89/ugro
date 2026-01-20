@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "serena": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "~/Tools/mcps/serena",
+        "serena",
+        "start-mcp-server",
+        "--project",
+        "geriapp",
+        "--context",
+        "ide-assistant"
+      ]
+    }
+  }
+}

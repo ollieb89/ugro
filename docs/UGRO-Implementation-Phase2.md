@@ -225,7 +225,7 @@ Real-time training telemetry:
 Centralize all outputs:
 
 ```
-~/ugro_data/
+/home/ollie/Development/Tools/ugro_data/
 ├── jobs/
 │   ├── job_001/
 │   │   ├── config.json          (model, dataset, hyperparams)
@@ -255,7 +255,7 @@ Centralize all outputs:
 **Goal:** Single command replaces 3-terminal manual work
 
 ```python
-# ~/ugro/ugro_cli.py
+# /home/ollie/Development/Tools/ugro/ugro_cli.py
 import argparse
 import subprocess
 import json
@@ -324,7 +324,7 @@ class UGROAgent:
 **CLI Usage:**
 ```bash
 # Install as command
-pip install -e ~/ugro/
+pip install -e /home/ollie/Development/Tools/ugro/
 
 # Simple launch
 ugro launch --model llama-7b --dataset wikitext
@@ -405,7 +405,7 @@ class MetricsCollector:
             "total_time": metrics[-1]["timestamp"] - metrics[0]["timestamp"],
             "final_loss": metrics[-1]["loss"],
             "avg_gpu_util": mean([m["gpu_util"] for m in metrics]),
-            "checkpoint_path": f"~/ugro_data/jobs/{job_id}/checkpoints/final.pt",
+            "checkpoint_path": f"/home/ollie/Development/Tools/ugro_data/jobs/{job_id}/checkpoints/final.pt",
         }
         
         return report
@@ -469,10 +469,10 @@ After core is solid, add:
 
 ```bash
 # On gpu-master
-mkdir -p ~/ugro/{src,config,data,logs,bin}
+mkdir -p /home/ollie/Development/Tools/ugro/{src,config,data,logs,bin}
 
 # Project layout:
-~/ugro/
+/home/ollie/Development/Tools/ugro/
 ├── src/
 │   ├── __init__.py
 │   ├── ugro_cli.py         # Main CLI entry point
@@ -493,7 +493,7 @@ mkdir -p ~/ugro/{src,config,data,logs,bin}
 
 ### Step 2: Define Your Cluster
 
-**File: `~/ugro/config/cluster.yaml`**
+**File: `/home/ollie/Development/Tools/ugro/config/cluster.yaml`**
 
 ```yaml
 cluster:
@@ -532,7 +532,7 @@ training:
 
 ### Step 3: Create Core Agent
 
-**File: `~/ugro/src/ugro_cli.py`**
+**File: `/home/ollie/Development/Tools/ugro/src/ugro_cli.py`**
 
 ```python
 #!/usr/bin/env python3
@@ -628,9 +628,9 @@ def health():
 
 class UGROAgent:
     def __init__(self):
-        self.config_path = Path("~/ugro/config/cluster.yaml").expanduser()
-        self.state_path = Path("~/ugro/data/cluster_state.json").expanduser()
-        self.results_path = Path("~/ugro/data/experiments").expanduser()
+        self.config_path = Path("/home/ollie/Development/Tools/ugro/config/cluster.yaml").expanduser()
+        self.state_path = Path("/home/ollie/Development/Tools/ugro/data/cluster_state.json").expanduser()
+        self.results_path = Path("/home/ollie/Development/Tools/ugro/data/experiments").expanduser()
         
         with open(self.config_path) as f:
             self.config = yaml.safe_load(f)
@@ -744,10 +744,10 @@ if __name__ == '__main__':
 
 ```bash
 # Make executable
-chmod +x ~/ugro/bin/ugro
+chmod +x /home/ollie/Development/Tools/ugro/bin/ugro
 
 # Create symlink or add to PATH
-ln -s ~/ugro/bin/ugro ~/.local/bin/ugro
+ln -s /home/ollie/Development/Tools/ugro/bin/ugro ~/.local/bin/ugro
 
 # Test
 ugro health
@@ -770,7 +770,7 @@ ugro launch --model unsloth/tinyllama-bnb-4bit --dataset wikitext --epochs 1 --n
 # - Start rank 0 locally
 # - Monitor all 3 until completion
 # - Collect logs and metrics
-# - Store results in ~/ugro/data/experiments/first_test/
+# - Store results in /home/ollie/Development/Tools/ugro/data/experiments/first_test/
 ```
 
 ---
@@ -811,7 +811,7 @@ ugro launch --model unsloth/tinyllama-bnb-4bit --dataset wikitext --epochs 1 --n
 ✅ **Done when:**
 - Single command (`ugro launch`) replaces 3 SSH terminals
 - Health checks work reliably (detect node failures instantly)
-- All training outputs centralized in `~/ugro/data/experiments/`
+- All training outputs centralized in `/home/ollie/Development/Tools/ugro/data/experiments/`
 - Can scale from 3 → 4+ machines by editing config file
 - Basic metrics collected (loss, GPU util, time)
 - Logs viewable with `ugro logs <job_id>`
@@ -833,7 +833,7 @@ ugro results experiment_v2  # Shows: loss, throughput, checkpoint path
 
 ## Next Steps
 
-1. **Today:** Copy Phase 2a code above into `~/ugro/src/`
+1. **Today:** Copy Phase 2a code above into `/home/ollie/Development/Tools/ugro/src/`
 2. **This week:** Implement `UGROAgent.launch_distributed_training()`
 3. **Test:** Run `ugro launch` and verify it matches manual 3-terminal method
 4. **Expand:** Add health monitor, metrics collection
@@ -883,7 +883,7 @@ Your custom agent:
 → Check log paths in job config
 
 **"Job state file corrupted"**
-→ Delete `~ugro/data/cluster_state.json`, it regenerates
+→ Delete `/home/ollie/Development/Tools/ugro/data/cluster_state.json`, it regenerates
 
 ---
 

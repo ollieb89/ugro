@@ -84,7 +84,7 @@ UGRO Project
 Create this complete structure:
 
 ```
-~/projects/UGRO/                          ← Main project root
+/home/ollie/Development/Tools/ugro/                          ← Main project root
 ├── .gitignore
 ├── README.md
 ├── pyproject.toml                        ← Pixi/Poetry config
@@ -154,7 +154,7 @@ Create this complete structure:
 Keep lightweight - just training scripts and environments:
 
 ```
-~/projects/UGRO/                          ← Same paths
+/home/ollie/Development/Tools/ugro/                          ← Same paths
 ├── scripts/
 │   ├── train_production.py               ← Synced from master
 │   └── train_single_test.py              ← Synced from master
@@ -173,8 +173,8 @@ Run **on gpu-master**:
 
 ```bash
 # Create project directory
-mkdir -p ~/projects/UGRO
-cd ~/projects/UGRO
+mkdir -p /home/ollie/Development/Tools/ugro
+cd /home/ollie/Development/Tools/ugro
 
 # Create all subdirectories
 mkdir -p src config scripts data/{experiments,jobs} logs tests docs/examples tools
@@ -236,19 +236,19 @@ git add .gitignore
 git commit -m "Initial project structure"
 
 # Verify structure
-tree -L 2 ~/projects/UGRO
+tree -L 2 /home/ollie/Development/Tools/ugro
 ```
 
 ### Step 2: Create Pixi Configuration (5 min)
 
-**File: `~/projects/UGRO/pyproject.toml`**
+**File: `/home/ollie/Development/Tools/ugro/pyproject.toml`**
 
 ```toml
 [project]
 name = "ugro"
 version = "0.1.0"
 description = "Unified GPU Resource Orchestrator - Personal scale GPU cluster management"
-authors = [{name = "Your Name", email = "your.email@example.com"}]
+authors = [{name = "Oliver", email = "buitelaar@gmail.com"}]
 requires-python = ">=3.10"
 dependencies = [
     "click>=8.1.0",
@@ -297,7 +297,7 @@ disallow_untyped_defs = false
 ### Step 3: Initialize Pixi Environment (5 min)
 
 ```bash
-cd ~/projects/UGRO
+cd /home/ollie/Development/Tools/ugro
 
 # Install pixi (if not already done)
 curl -fsSL https://pixi.sh/install.sh | bash
@@ -306,15 +306,15 @@ curl -fsSL https://pixi.sh/install.sh | bash
 pixi init --format pyproject
 
 # Verify
-pixi env list
+pixi info
 
 # You should see:
-# default (~/projects/UGRO/.pixi/envs/default)
+# default (/home/ollie/Development/Tools/ugro/.pixi/envs/default)
 ```
 
 ### Step 4: Create Configuration Files (10 min)
 
-**File: `~/projects/UGRO/config/cluster.yaml`**
+**File: `/home/ollie/Development/Tools/ugro/config/cluster.yaml`**
 
 ```yaml
 # Cluster Configuration
@@ -378,12 +378,12 @@ workers:
 
 # Local paths (on master)
 paths:
-  project_root: "~/projects/UGRO"
-  scripts: "~/projects/UGRO/scripts"
-  config: "~/projects/UGRO/config"
-  data: "~/projects/UGRO/data"
-  logs: "~/projects/UGRO/logs"
-  experiments: "~/projects/UGRO/data/experiments"
+  project_root: "/home/ollie/Development/Tools/ugro"
+  scripts: "/home/ollie/Development/Tools/ugro/scripts"
+  config: "/home/ollie/Development/Tools/ugro/config"
+  data: "/home/ollie/Development/Tools/ugro/data"
+  logs: "/home/ollie/Development/Tools/ugro/logs"
+  experiments: "/home/ollie/Development/Tools/ugro/data/experiments"
 
 # Training defaults
 training:
@@ -413,11 +413,11 @@ environment:
 logging:
   level: "INFO"
   format: "[%(asctime)s] %(name)s - %(levelname)s - %(message)s"
-  file: "~/projects/UGRO/logs/agent.log"
+  file: "/home/ollie/Development/Tools/ugro/logs/agent.log"
   keep_days: 7
 ```
 
-**File: `~/projects/UGRO/config/training_defaults.yaml`**
+**File: `/home/ollie/Development/Tools/ugro/config/training_defaults.yaml`**
 
 ```yaml
 # Default training configuration
@@ -471,12 +471,12 @@ logging:
   log_level: "INFO"
   steps: 10
   use_tensorboard: true
-  tensorboard_dir: "~/projects/UGRO/data/experiments/{job_id}/tensorboard"
+  tensorboard_dir: "/home/ollie/Development/Tools/ugro/data/experiments/{job_id}/tensorboard"
 ```
 
 ### Step 5: Create Entry Point (5 min)
 
-**File: `~/projects/UGRO/src/__main__.py`**
+**File: `/home/ollie/Development/Tools/ugro/src/__main__.py`**
 
 ```python
 """UGRO entry point"""
@@ -487,7 +487,7 @@ if __name__ == "__main__":
     main()
 ```
 
-**File: `~/projects/UGRO/src/cli.py`**
+**File: `/home/ollie/Development/Tools/ugro/src/cli.py`**
 
 ```python
 #!/usr/bin/env python3
@@ -603,7 +603,7 @@ if __name__ == '__main__':
 
 ### Step 6: Create Core Modules (20 min)
 
-**File: `~/projects/UGRO/src/config.py`**
+**File: `/home/ollie/Development/Tools/ugro/src/config.py`**
 
 ```python
 """Configuration management"""
@@ -639,7 +639,7 @@ def expand_paths(config: Dict[str, Any]) -> Dict[str, Any]:
     return config
 ```
 
-**File: `~/projects/UGRO/src/agent.py`**
+**File: `/home/ollie/Development/Tools/ugro/src/agent.py`**
 
 ```python
 """Main UGRO orchestration agent"""
@@ -739,7 +739,7 @@ class UGROAgent:
         # Implementation will go in next section
 ```
 
-**File: `~/projects/UGRO/src/ssh_utils.py`**
+**File: `/home/ollie/Development/Tools/ugro/src/ssh_utils.py`**
 
 ```python
 """SSH utilities for remote execution"""
@@ -777,7 +777,7 @@ class SSHClient:
             return -1, "", "Timeout"
 ```
 
-**File: `~/projects/UGRO/src/cluster.py`**
+**File: `/home/ollie/Development/Tools/ugro/src/cluster.py`**
 
 ```python
 """Cluster management"""
@@ -854,7 +854,7 @@ class Cluster:
         }
 ```
 
-**File: `~/projects/UGRO/src/job.py`**
+**File: `/home/ollie/Development/Tools/ugro/src/job.py`**
 
 ```python
 """Job management"""
@@ -923,7 +923,7 @@ Your `cluster.yaml` is **production-ready** and defines:
 ### Test 1: Verify Project Structure
 
 ```bash
-cd ~/projects/UGRO
+cd /home/ollie/Development/Tools/ugro
 
 # Check directory layout
 tree -L 2
@@ -934,10 +934,10 @@ tree -L 2
 ### Test 2: Verify Pixi Environment
 
 ```bash
-cd ~/projects/UGRO
+cd /home/ollie/Development/Tools/ugro
 
 # List environments
-pixi env list
+pixi info
 
 # Activate environment
 pixi shell
@@ -955,7 +955,7 @@ exit
 ### Test 3: Verify Configuration
 
 ```bash
-cd ~/projects/UGRO
+cd /home/ollie/Development/Tools/ugro
 
 # Test config loading
 pixi run python -c "
@@ -970,7 +970,7 @@ print('Workers:', len(config['workers']))
 ### Test 4: Test SSH Connectivity
 
 ```bash
-cd ~/projects/UGRO
+cd /home/ollie/Development/Tools/ugro
 
 # Test cluster health
 pixi run python -c "
@@ -988,7 +988,7 @@ for name, status in health.items():
 
 ### Immediate (Next 30 min)
 
-1. ✅ Copy project structure to `~/projects/UGRO/`
+1. ✅ Copy project structure to `/home/ollie/Development/Tools/ugro/`
 2. ✅ Create all Python files from this guide
 3. ✅ Create `cluster.yaml` with your node definitions
 4. ✅ Run tests above to validate
@@ -998,7 +998,7 @@ for name, status in health.items():
 1. Complete `agent.py` with full launch implementation
 2. Add `display_logs()`, `display_results()`, `display_status()`
 3. Test `ugro launch --name test1` end-to-end
-4. Verify results saved to `~/projects/UGRO/data/experiments/`
+4. Verify results saved to `/home/ollie/Development/Tools/ugro/data/experiments/`
 
 ### Medium-term (Next 2 weeks)
 
