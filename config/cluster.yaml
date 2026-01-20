@@ -32,9 +32,9 @@ workers:
       ram_gb: 16
     
     paths:
-      home: "/home/ob"
-      project: "/home/ob/projects/UGRO"
-      scripts: "/home/ob/projects/UGRO/scripts"
+      home: "/home/ob/"
+      project: "/home/ob/Development/Tools/ugro"
+      scripts: "/home/ob/Development/Tools/ugro/scripts"
   
   - name: "gpu2"
     hostname: "gpu2"
@@ -51,8 +51,8 @@ workers:
     
     paths:
       home: "/home/ollie"
-      project: "/home/ollie/projects/UGRO"
-      scripts: "/home/ollie/projects/UGRO/scripts"
+      project: "/home/ollie/Tools/ugro"
+      scripts: "/home/ollie/Tools/ugro/scripts"
 
 # Local paths (on master)
 paths:
