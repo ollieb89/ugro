@@ -1,0 +1,6 @@
+---
+trigger: model_decision
+description: Requires Google-style docstrings for all Python functions, methods, and classes.
+globs: **/*.py
+---
+- **Documentation:** Google style docstring

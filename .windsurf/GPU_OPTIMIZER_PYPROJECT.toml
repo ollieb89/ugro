@@ -1,0 +1,187 @@
+# GPU Optimizer Project Configuration
+# Place this in: ai-ml-pipeline/projects/gpu_optimizer/pyproject.toml
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gpu-optimizer"
+version = "0.1.0"
+description = "GPU VRAM optimization suite with tensor management, gradient checkpointing, and memory profiling"
+requires-python = ">=3.10"
+authors = [
+    { name = "Your Name", email = "email@example.com" },
+]
+keywords = [
+    "gpu-optimization",
+    "vram-management",
+    "tensor-swapping",
+    "gradient-checkpointing",
+    "memory-profiling"
+]
+
+# Core dependencies (inherited from root pixi.toml)
+dependencies = [
+    "torch>=2.4.0",
+    "pytorch-lightning>=2.2.0",
+    "nvidia-ml-py>=12.535.0",
+    "numpy>=1.26.0",
+    "pandas>=2.2.0",
+    "psutil>=6.1.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+    "prometheus-client>=0.21.0",
+    "pydantic>=2.8.0",
+    "matplotlib>=3.10.0",
+    "tensorboard>=2.18.0",
+    "wandb>=0.18.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.1.0",
+    "jupyter>=1.0.0",
+    "jupyterlab>=4.2.0",
+]
+
+[project.scripts]
+# CLI commands
+vram-api = "gpu_optimizer.api.main:main"
+profile-model = "gpu_optimizer.cli:profile"
+optimize-model = "gpu_optimizer.cli:optimize"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["gpu_optimizer*"]
+
+[tool.setuptools.package-data]
+gpu_optimizer = [
+    "config/*.json",
+]
+
+# ============================================================================
+# Project Structure Documentation
+# ============================================================================
+#
+# src/gpu_optimizer/
+# ├── __init__.py
+# ├── memory_profiler.py        # nvidia-ml-py wrapper, tensor tracking
+# ├── tensor_swapper.py         # GPU ↔ CPU tensor migration
+# ├── checkpoint_manager.py     # torch.utils.checkpoint wrapper + automation
+# ├── batch_optimizer.py        # Dynamic batch sizing algorithm
+# ├── cuda_analyzer.py          # Memory fragmentation & defrag
+# ├── dashboard.py              # Prometheus metrics + Grafana config
+# ├── cost_model.py             # Cloud GPU pricing (GCP, AWS)
+# ├── model_profiler.py         # Layer-wise memory analysis
+# └── utils.py                  # Utilities
+#
+# api/
+# ├── __init__.py
+# ├── main.py                   # FastAPI + Prometheus
+# ├── routes.py                 # API endpoints (/profile, /optimize, /metrics)
+# └── schemas.py                # Pydantic models
+#
+# examples/
+# ├── llama_7b_optimization.py  # Reduce 20GB → <8GB
+# ├── diffusion_model_tune.py   # Stable Diffusion memory optimization
+# ├── training_pipeline.py      # Full training loop with optimizer
+# └── inference_optimization.py # Batch inference tuning
+#
+# tests/
+# ├── test_memory_profiler.py
+# ├── test_tensor_swapper.py
+# ├── test_checkpoint_manager.py
+# ├── test_batch_optimizer.py
+# └── test_api.py
+#
+# ============================================================================
+# Key Features & Usage
+# ============================================================================
+#
+# 1. Memory Profiling:
+#    from gpu_optimizer import MemoryProfiler
+#    profiler = MemoryProfiler()
+#    output, peak_mem, profile = profiler.profile_forward_pass(model, input)
+#
+# 2. Tensor Swapping:
+#    from gpu_optimizer import TensorSwapper
+#    swapper = TensorSwapper(swap_threshold=0.8)  # Swap at 80% VRAM usage
+#    # Automatically handles GPU → CPU migration
+#
+# 3. Gradient Checkpointing:
+#    from gpu_optimizer import CheckpointManager
+#    ckpt_mgr = CheckpointManager(model)
+#    ckpt_mgr.auto_apply(target_memory_gb=8)
+#    # Reduces memory by ~40% with ~15% compute overhead
+#
+# 4. Dynamic Batch Sizing:
+#    from gpu_optimizer import BatchOptimizer
+#    batch_optimizer = BatchOptimizer(model)
+#    optimal_batch = batch_optimizer.find_max_batch_size(input_shape)
+#    # Finds largest batch that fits in VRAM
+#
+# 5. Monitoring:
+#    # Run API: pixi run --environment cuda python -m gpu_optimizer.api.main
+#    # Access: http://localhost:8002/metrics (Prometheus)
+#    # Grafana: http://localhost:3000
+#
+# ============================================================================
+# Multi-System Compatibility
+# ============================================================================
+#
+# VRAM Constraints:
+# - RTX 5070 Ti: 12GB VRAM
+# - RTX 4070 Ti: 12GB VRAM
+# - RTX 3070 Ti: 8GB VRAM (most constrained)
+#
+# Optimization Strategy:
+# 1. Profile model on each system
+# 2. Auto-detect max VRAM (90% threshold)
+# 3. Apply gradient checkpointing if needed
+# 4. Use tensor swapping for remaining models
+# 5. Report optimal batch size per system
+#
+# Automatic Cross-System Detection:
+#    from gpu_optimizer import auto_configure
+#    config = auto_configure()
+#    # config.batch_size: optimal for current GPU
+#    # config.checkpoint_layers: [5, 12, 22]
+#    # config.swap_threshold: 0.85
+#
+# ============================================================================
+# Development Workflow
+# ============================================================================
+#
+# Installation:
+#   cd projects/gpu_optimizer
+#   pixi run pip install -e ".[dev]"
+#
+# Run API:
+#   pixi run --environment cuda python -m gpu_optimizer.api.main
+#   # Server runs on http://localhost:8002
+#   # Metrics available at http://localhost:8002/metrics
+#
+# Run Examples:
+#   pixi run python examples/llama_7b_optimization.py
+#   pixi run python examples/training_pipeline.py
+#
+# Profile a Model:
+#   pixi run python -m gpu_optimizer profile --model resnet50 --batch-size 32
+#
+# Optimize a Model:
+#   pixi run python -m gpu_optimizer optimize --model llama-7b --target-vram 8
+#
+# Run Tests:
+#   pixi run pytest tests/ -v --cov=gpu_optimizer
+#
+# Jupyter Notebook:
+#   pixi run jupyter lab
+#   # Then open notebooks/vram_profiling_demo.ipynb
+#
+# ============================================================================

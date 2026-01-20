@@ -1,0 +1,6 @@
+---
+trigger: model_decision
+description: Employs the logging module judiciously to log important events, warnings, and errors.
+globs: **/*.py
+---
+- **Logging:** Employ the `logging` module judiciously to log important events, warnings, and errors.

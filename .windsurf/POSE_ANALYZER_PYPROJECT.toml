@@ -1,0 +1,118 @@
+# Pose Analyzer Project Configuration
+# Place this in: ai-ml-pipeline/projects/pose_analyzer/pyproject.toml
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pose-analyzer"
+version = "0.1.0"
+description = "Real-time fitness form detector with multi-stream pose estimation and biomechanical analysis"
+requires-python = ">=3.10"
+authors = [
+    { name = "Your Name", email = "email@example.com" },
+]
+keywords = [
+    "pose-estimation",
+    "fitness",
+    "computer-vision",
+    "form-detection",
+    "real-time"
+]
+
+# Core dependencies (inherited from root pixi.toml)
+dependencies = [
+    "mediapipe>=0.10.0",
+    "ultralytics>=8.5.0",
+    "opencv-python>=4.10.0",
+    "numpy>=1.26.0",
+    "pandas>=2.2.0",
+    "scipy>=1.14.0",
+    "scikit-learn>=1.5.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+    "websockets>=14.2",
+    "psycopg2-binary>=2.9.0",
+    "pydantic>=2.8.0",
+    "matplotlib>=3.10.0",
+    "torch>=2.4.0",
+    "torchvision>=0.19.0",
+    "dtaidistance>=2.3.0",  # For DTW anomaly detection
+    "tslearn>=0.6.0",       # Time-series learning
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.1.0",
+    "jupyter>=1.0.0",
+    "jupyterlab>=4.2.0",
+]
+
+[project.scripts]
+# CLI commands
+pose-api = "pose_analyzer.api.main:main"
+pose-detect = "pose_analyzer.cli:detect"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["pose_analyzer*"]
+
+[tool.setuptools.package-data]
+pose_analyzer = [
+    "models/*.task",
+    "config/*.json",
+]
+
+# ============================================================================
+# Project Structure Documentation
+# ============================================================================
+#
+# src/pose_analyzer/
+# ├── __init__.py
+# ├── pose_detector.py          # MediaPipe + YOLOv11 model wrappers
+# ├── biomechanics.py           # Joint angle & skeletal calculations
+# ├── form_scorer.py            # Reference-based form analysis
+# ├── temporal_analyzer.py      # DTW anomaly detection
+# ├── video_processor.py        # OpenCV stream handling (webcam, RTMP, mp4)
+# ├── db_connector.py           # TimescaleDB integration
+# └── utils.py                  # Helper functions
+#
+# api/
+# ├── __init__.py
+# ├── main.py                   # FastAPI application entry point
+# ├── routes.py                 # API endpoints (/detect, /stream, /analyze)
+# ├── schemas.py                # Pydantic models for request/response
+# └── websocket_handler.py      # Real-time WebSocket connections
+#
+# tests/
+# ├── test_pose_detector.py
+# ├── test_biomechanics.py
+# ├── test_form_scorer.py
+# └── test_api.py
+#
+# ============================================================================
+# Development Workflow
+# ============================================================================
+#
+# Installation:
+#   cd projects/pose_analyzer
+#   pixi run pip install -e ".[dev]"
+#
+# Run API:
+#   pixi run --environment cuda python -m pose_analyzer.api.main
+#   # Server runs on http://localhost:8001
+#
+# Run Tests:
+#   pixi run pytest tests/ -v
+#
+# Jupyter Notebook:
+#   pixi run jupyter lab
+#   # Then open notebooks/pose_demo.ipynb
+#
+# ============================================================================
