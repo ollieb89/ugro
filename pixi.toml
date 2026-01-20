@@ -36,8 +36,9 @@ ugro = { path = "/home/ollie/Development/Tools/ugro", editable = true }
 # CPU Feature - CPU-only PyTorch
 # ============================================================================
 
-[feature.cpu-torch]
-[feature.cpu-torch.pypi-dependencies]
+[feature.cpu.dependencies]
+
+[feature.cpu.pypi-dependencies]
 torch = { version = "==2.7.1", index = "https://download.pytorch.org/whl/cpu" }
 torchvision = { version = "==0.22.1", index = "https://download.pytorch.org/whl/cpu" }
 torchaudio = { version = "==2.7.1", index = "https://download.pytorch.org/whl/cpu" }
@@ -88,7 +89,7 @@ default = { features = [], solve-group = "default" }
 cuda = { features = ["cuda"], solve-group = "default" }
 monitor = { features = ["monitor"], solve-group = "default" }
 test = { features = ["test"], solve-group = "default" }
-cpu = { features = ["cpu"], solve-group = "default" }
+cpu = { features = ["cpu"] }
 
 
 # ============================================================================
