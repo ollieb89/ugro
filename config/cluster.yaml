@@ -103,7 +103,7 @@ webhook:
   branch: "development"
   
   # Webhook secret for security (generate a strong random string)
-  secret: ""  # Set this to a secure random string
+  secret: "25b0b07ba0ece287fc1ccd92d09990d1836b3d54b45d39164521fa8ddd69cebe"  # Set this to a secure random string
   
   # Webhook server configuration
   server:
