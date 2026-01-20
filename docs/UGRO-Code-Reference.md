@@ -14,16 +14,16 @@
 
 ```bash
 # Run on gpu-master
-mkdir -p ~/ugro/{src,config,data/{experiments,jobs},logs,bin}
+mkdir -p /home/ollie/Development/Tools/ugro/{src,config,data/{experiments,jobs},logs,bin}
 
 # Verify
-ls -la ~/ugro/
+ls -la /home/ollie/Development/Tools/ugro/
 # Should show: src/ config/ data/ logs/ bin/
 ```
 
 ### 2. Create Configuration File
 
-**File: `~/ugro/config/cluster.yaml`**
+**File: `/home/ollie/Development/Tools/ugro/config/cluster.yaml`**
 
 ```yaml
 cluster:
@@ -68,7 +68,7 @@ training:
 paths:
   project_base: "~/ai-cluster"
   scripts: "~/ai-cluster/scripts"
-  results: "~/ugro/data/experiments"
+  results: "/home/ollie/Development/Tools/ugro/data/experiments"
 ```
 
 ### 3. Install Dependencies
@@ -81,7 +81,7 @@ pip install click pyyaml paramiko
 
 ## Core Agent Code
 
-### File 1: `~/ugro/src/ugro_cli.py`
+### File 1: `/home/ollie/Development/Tools/ugro/src/ugro_cli.py`
 
 This is your main entry point. Save exactly as shown:
 
@@ -560,7 +560,7 @@ if __name__ == '__main__':
     cli()
 ```
 
-### File 2: `~/ugro/bin/ugro`
+### File 2: `/home/ollie/Development/Tools/ugro/bin/ugro`
 
 Simple wrapper script:
 
@@ -575,8 +575,8 @@ python -m src.ugro_cli "$@"
 Make it executable:
 
 ```bash
-chmod +x ~/ugro/bin/ugro
-chmod +x ~/ugro/src/ugro_cli.py
+chmod +x /home/ollie/Development/Tools/ugro/bin/ugro
+chmod +x /home/ollie/Development/Tools/ugro/src/ugro_cli.py
 ```
 
 ---
@@ -587,14 +587,14 @@ chmod +x ~/ugro/src/ugro_cli.py
 
 ```bash
 # One-time setup
-mkdir -p ~/ugro/{src,config,data,logs,bin}
+mkdir -p /home/ollie/Development/Tools/ugro/{src,config,data,logs,bin}
 
-# Copy the YAML config above to: ~/ugro/config/cluster.yaml
-# Copy the Python code above to: ~/ugro/src/ugro_cli.py
-# Copy the bash wrapper above to: ~/ugro/bin/ugro
+# Copy the YAML config above to: /home/ollie/Development/Tools/ugro/config/cluster.yaml
+# Copy the Python code above to: /home/ollie/Development/Tools/ugro/src/ugro_cli.py
+# Copy the bash wrapper above to: /home/ollie/Development/Tools/ugro/bin/ugro
 
 # Add to PATH
-ln -s $(realpath ~/ugro/bin/ugro) ~/.local/bin/ugro
+ln -s $(realpath /home/ollie/Development/Tools/ugro/bin/ugro) ~/.local/bin/ugro
 
 # Test
 ugro health
@@ -635,7 +635,7 @@ ugro results llama_exp
 After `ugro launch --name exp1`, you'll have:
 
 ```
-~/ugro/data/experiments/exp1_20260120_120000/
+/home/ollie/Development/Tools/ugro/data/experiments/exp1_20260120_120000/
 ├── config.json              # Your launch parameters
 ├── training_rank0.log       # Rank 0 output
 ├── training_rank1.log       # Rank 1 output
@@ -708,7 +708,7 @@ ugro results quick_test
 
 ```bash
 # After training completes
-ls -la ~/ugro/data/experiments/
+ls -la /home/ollie/Development/Tools/ugro/data/experiments/
 
 # Should show:
 # quick_test_20260120_120000/
@@ -717,7 +717,7 @@ ls -la ~/ugro/data/experiments/
 #   ├── training_rank1.log
 #   └── training_rank2.log
 
-cat ~/ugro/data/experiments/quick_test_*/config.json
+cat /home/ollie/Development/Tools/ugro/data/experiments/quick_test_*/config.json
 # Should show your job config
 ```
 
@@ -729,7 +729,7 @@ cat ~/ugro/data/experiments/quick_test_*/config.json
 
 ```bash
 # Create it
-cat > ~/ugro/config/cluster.yaml << 'EOF'
+cat > /home/ollie/Development/Tools/ugro/config/cluster.yaml << 'EOF'
 # Paste the YAML config from above
 EOF
 ```
@@ -815,7 +815,7 @@ You now have:
 - ✅ Health monitoring
 
 **Next steps:**
-1. Copy files to `~/ugro/`
+1. Copy files to `/home/ollie/Development/Tools/ugro/`
 2. Run `ugro health` to verify
 3. Run `ugro launch --name first_test`
 4. Monitor with `ugro logs first_test`

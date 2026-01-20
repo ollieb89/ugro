@@ -98,7 +98,7 @@ Build a Python service that manages cluster operations:
 
 ```bash
 # Create new directory for orchestrator
-mkdir -p ~/ugro-orchestrator/{scheduler,monitor,api,config}
+mkdir -p /home/ollie/Development/Tools/ugro-orchestrator/{scheduler,monitor,api,config}
 
 # Structure:
 # ugro-orchestrator/
@@ -171,6 +171,6 @@ Job Queue Architecture Options:
 
 ```bash\n# Test SSH to all machines\nssh ob@192.168.1.101 \"nvidia-smi | head -5\"\nssh ollie@192.168.1.102 \"nvidia-smi | head -5\"\n\n# Check environment on all machines\nfor i in 100 101 102; do\n  echo \"=== 192.168.1.$i ===\"\n  ssh <user>@192.168.1.$i \"conda list | grep torch\"\ndone\n\n# View logs from distributed training\ntail -f ~/ai-cluster/logs/training_rank0_*.log\n```
 
-### To Launch Services (Next Week)\n\n```bash\n# Start Redis (for job queue)\nredis-server --port 6379\n\n# Start UGRO monitor\npython ~/ugro-orchestrator/monitor/ugro-monitor.py\n\n# Start UGRO API\npython ~/ugro-orchestrator/api/ugro-api.py\n\n# Submit job via API\ncurl -X POST http://192.168.1.100:5000/api/jobs \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"name\": \"Llama-7B Fine-tune\",\n    \"model\": \"meta-llama/Llama-2-7b-hf\",\n    \"dataset\": \"wikitext\",\n    \"epochs\": 3\n  }'\n\n# Check cluster status\ncurl http://192.168.1.100:5000/api/cluster/status\n```
+### To Launch Services (Next Week)\n\n```bash\n# Start Redis (for job queue)\nredis-server --port 6379\n\n# Start UGRO monitor\npython /home/ollie/Development/Tools/ugro-orchestrator/monitor/ugro-monitor.py\n\n# Start UGRO API\npython /home/ollie/Development/Tools/ugro-orchestrator/api/ugro-api.py\n\n# Submit job via API\ncurl -X POST http://192.168.1.100:5000/api/jobs \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"name\": \"Llama-7B Fine-tune\",\n    \"model\": \"meta-llama/Llama-2-7b-hf\",\n    \"dataset\": \"wikitext\",\n    \"epochs\": 3\n  }'\n\n# Check cluster status\ncurl http://192.168.1.100:5000/api/cluster/status\n```
 
 ---\n\n## Deliverables This Week\n\n- ✅ **Code:** Core orchestrator modules (scheduler, monitor, API)\n- ✅ **Config:** Job configuration templates\n- ✅ **Docs:** API documentation\n- ✅ **Test:** End-to-end distributed training verification\n\n---\n\n## Next Week's Goals\n\n1. **Distributed job launcher** - SSH into workers and launch training\n2. **Checkpoint manager** - Save/resume training across cluster\n3. **Dashboard** - Web UI for monitoring\n4. **Error handling** - Graceful failure recovery\n\n---\n\n## Questions for You\n\n1. **Job Queue Backend:** Redis vs simple file-based vs custom?\n2. **Authentication:** SSH key-based (current) vs token-based API auth?\n3. **Scaling:** Plan to add more machines soon? How many?\n4. **Data:** Where will training data live? (NFS mount, local copy, streaming?)\n5. **Checkpoint Strategy:** Central checkpoint directory or per-machine?\n\nResponses will shape the control plane architecture! 🚀\n
