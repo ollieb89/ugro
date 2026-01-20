@@ -248,7 +248,7 @@ tree -L 2 /home/ollie/Development/Tools/ugro
 name = "ugro"
 version = "0.1.0"
 description = "Unified GPU Resource Orchestrator - Personal scale GPU cluster management"
-authors = [{name = "Your Name", email = "your.email@example.com"}]
+authors = [{name = "Oliver", email = "buitelaar@gmail.com"}]
 requires-python = ">=3.10"
 dependencies = [
     "click>=8.1.0",
@@ -306,7 +306,7 @@ curl -fsSL https://pixi.sh/install.sh | bash
 pixi init --format pyproject
 
 # Verify
-pixi env list
+pixi info
 
 # You should see:
 # default (/home/ollie/Development/Tools/ugro/.pixi/envs/default)
@@ -937,7 +937,7 @@ tree -L 2
 cd /home/ollie/Development/Tools/ugro
 
 # List environments
-pixi env list
+pixi info
 
 # Activate environment
 pixi shell

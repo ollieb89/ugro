@@ -1,0 +1,25 @@
+{
+  "jobs": {
+    "test-job": {
+      "id": "d5594769-bf63-4ba4-bfa1-df5daf7946bf",
+      "status": "running",
+      "created_at": "2026-01-20 05:28:30.490969",
+      "started_at": "2026-01-20 05:28:30.490972",
+      "parameters": {
+        "job_name": "test-job",
+        "model": "unsloth/tinyllama-bnb-4bit",
+        "dataset": "wikitext",
+        "epochs": 2,
+        "learning_rate": 0.0002,
+        "verbose": false,
+        "num_workers": 2
+      },
+      "directory": "/home/ollie/Development/Tools/ugro/data/experiments/test-job",
+      "workers": [
+        "gpu1",
+        "gpu2"
+      ]
+    }
+  },
+  "last_updated": "2026-01-20 05:28:30.490976"
+}

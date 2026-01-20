@@ -1,0 +1,95 @@
+cluster:
+  name: "Home AI Lab"
+  location: "Trondheim, Norway"
+  description: "Personal-scale GPU cluster for LLM training"
+  
+  # Master node (orchestrator)
+  master:
+    hostname: "gpu-master"
+    ip: "192.168.1.100"
+    port: 22
+    user: "${USER}"  # Current user on master
+  
+  # Communication settings
+  communication:
+    backend: "c10d"  # PyTorch distributed backend
+    master_port: 29500
+    timeout_seconds: 300
+
+# Worker nodes
+workers:
+  - name: "gpu1"
+    hostname: "gpu1"
+    ip: "192.168.1.101"
+    user: "ob"
+    ssh_port: 22
+    rank: 1
+    
+    hardware:
+      gpu_model: "RTX 4070"
+      vram_gb: 8
+      cpu_cores: 22
+      ram_gb: 16
+    
+    paths:
+      home: "/home/ob"
+      project: "/home/ob/projects/UGRO"
+      scripts: "/home/ob/projects/UGRO/scripts"
+  
+  - name: "gpu2"
+    hostname: "gpu2"
+    ip: "192.168.1.102"
+    user: "ollie"
+    ssh_port: 22
+    rank: 2
+    
+    hardware:
+      gpu_model: "RTX 3070 Ti"
+      vram_gb: 8
+      cpu_cores: 16
+      ram_gb: 32
+    
+    paths:
+      home: "/home/ollie"
+      project: "/home/ollie/projects/UGRO"
+      scripts: "/home/ollie/projects/UGRO/scripts"
+
+# Local paths (on master)
+paths:
+  project_root: "/home/ollie/Development/Tools/ugro"
+  scripts: "/home/ollie/Development/Tools/ugro/scripts"
+  config: "/home/ollie/Development/Tools/ugro/config"
+  data: "/home/ollie/Development/Tools/ugro/data"
+  logs: "/home/ollie/Development/Tools/ugro/logs"
+  experiments: "/home/ollie/Development/Tools/ugro/data/experiments"
+
+# Training defaults
+training:
+  default_model: "unsloth/tinyllama-bnb-4bit"
+  default_dataset: "wikitext"
+  default_epochs: 1
+  default_learning_rate: 0.0002
+  
+  batch_size_per_gpu: 1
+  gradient_accumulation_steps: 8
+  max_seq_length: 2048
+  
+  lora:
+    rank: 16
+    alpha: 32
+    dropout: 0.05
+    target_modules: ["q_proj", "v_proj"]
+
+# Environment settings
+environment:
+  conda_env: "main"  # Your pixi environment name
+  python_version: "3.11"
+  torch_version: "2.1.0"
+  cuda_version: "12.1"
+
+# Logging
+logging:
+  level: "INFO"
+  format: "[%(asctime)s] %(name)s - %(levelname)s - %(message)s"
+  file: "/home/ollie/Development/Tools/ugro/logs/agent.log"
+  keep_days: 7

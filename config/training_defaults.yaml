@@ -1,0 +1,52 @@
+# Default training configuration
+
+model:
+  name: "unsloth/tinyllama-bnb-4bit"
+  max_seq_length: 2048
+  dtype: "float16"
+  load_in_4bit: true
+
+dataset:
+  name: "wikitext"
+  split: "train"
+  cache_dir: "~/.cache/huggingface/datasets"
+
+training:
+  num_epochs: 1
+  learning_rate: 0.0002
+  warmup_steps: 100
+  weight_decay: 0.01
+  
+  batch_size_per_gpu: 1
+  gradient_accumulation_steps: 8
+  max_grad_norm: 1.0
+  
+  save_strategy: "epoch"
+  evaluation_strategy: "epoch"
+  eval_steps: 100
+
+optimizer:
+  type: "adamw"
+  betas: [0.9, 0.999]
+  eps: 1e-8
+
+lora:
+  enabled: true
+  rank: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "v_proj"
+  bias: "none"
+
+quantization:
+  enabled: true
+  bits: 4
+  compute_dtype: "float16"
+
+logging:
+  log_level: "INFO"
+  steps: 10
+  use_tensorboard: true
+  tensorboard_dir: "/home/ollie/Development/Tools/ugro/data/experiments/{job_id}/tensorboard"
