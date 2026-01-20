@@ -1,14 +1,18 @@
-#!/usr/bin/env python3
-"""
-UGRO Configuration Management
+"""UGRO Configuration Management.
 
 Handles loading and validation of cluster and training configurations.
 """
 
+from __future__ import annotations
+
 import os
-import yaml
 from pathlib import Path
-from typing import Dict, Any
+from typing import TYPE_CHECKING
+
+import yaml
+
+if TYPE_CHECKING:
+    from typing import Any
 
 
 def get_config_dir() -> Path:
@@ -16,7 +20,7 @@ def get_config_dir() -> Path:
     return Path(__file__).parent.parent / "config"
 
 
-def load_config(config_name: str = "cluster.yaml") -> Dict[str, Any]:
+def load_config(config_name: str = "cluster.yaml") -> dict[str, Any]:
     """Load YAML configuration"""
     config_path = get_config_dir() / config_name
     
@@ -27,7 +31,7 @@ def load_config(config_name: str = "cluster.yaml") -> Dict[str, Any]:
         return yaml.safe_load(f)
 
 
-def expand_paths(config: Dict[str, Any]) -> Dict[str, Any]:
+def expand_paths(config: dict[str, Any]) -> dict[str, Any]:
     """Expand ~ and environment variables in paths"""
     if 'paths' in config:
         for key, value in config['paths'].items():

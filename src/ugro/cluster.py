@@ -1,13 +1,19 @@
-"""Cluster management for UGRO"""
+"""Cluster management for UGRO."""
 
-from typing import Dict, List, Optional
-from src.ssh_utils import SSHClient
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from .ssh_utils import SSHClient
+
+if TYPE_CHECKING:
+    from typing import Any
 
 
 class Cluster:
     """Manages GPU cluster operations and health monitoring"""
     
-    def __init__(self, config: Dict):
+    def __init__(self, config: dict[str, Any]):
         """Initialize cluster manager
         
         Args:
@@ -29,7 +35,7 @@ class Cluster:
                 port=worker.get('ssh_port', 22)
             )
     
-    def check_health(self) -> Dict[str, Dict]:
+    def check_health(self) -> dict[str, dict[str, Any]]:
         """Check health of all cluster nodes
         
         Returns:
@@ -119,7 +125,7 @@ class Cluster:
             'timestamp': self._get_timestamp()
         }
     
-    def get_worker_by_name(self, name: str) -> Optional[Dict]:
+    def get_worker_by_name(self, name: str) -> dict[str, Any] | None:
         """Get worker configuration by name
         
         Args:
@@ -133,7 +139,7 @@ class Cluster:
                 return worker
         return None
     
-    def get_worker_by_rank(self, rank: int) -> Optional[Dict]:
+    def get_worker_by_rank(self, rank: int) -> dict[str, Any] | None:
         """Get worker configuration by rank
         
         Args:
@@ -147,7 +153,7 @@ class Cluster:
                 return worker
         return None
     
-    def get_all_workers(self) -> List[Dict]:
+    def get_all_workers(self) -> list[dict[str, Any]]:
         """Get all worker configurations
         
         Returns:
@@ -172,7 +178,7 @@ class Cluster:
         
         return ssh_client.run_command(command, timeout)
     
-    def execute_on_all_workers(self, command: str, timeout: int = 30) -> Dict[str, tuple]:
+    def execute_on_all_workers(self, command: str, timeout: int = 30) -> dict[str, tuple[bool, str, str]]:
         """Execute command on all workers
         
         Args:

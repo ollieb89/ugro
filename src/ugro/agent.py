@@ -1,16 +1,21 @@
-"""Main UGRO orchestration agent"""
+"""Main UGRO orchestration agent."""
 
-from typing import Dict, List, Optional
-from pathlib import Path
+from __future__ import annotations
+
 import json
-from datetime import datetime
 import subprocess
 import time
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING
 
-from src.config import load_config, expand_paths
-from src.ssh_utils import SSHClient
-from src.cluster import Cluster
-from src.job import Job, JobStatus
+from .cluster import Cluster
+from .config import expand_paths, load_config
+from .job import Job, JobStatus
+from .ssh_utils import SSHClient
+
+if TYPE_CHECKING:
+    from typing import Any
 
 class UGROAgent:
     """Main orchestrator"""
@@ -35,7 +40,7 @@ class UGROAgent:
         self.job_registry_file = self.jobs_dir / "job_registry.json"
         self.job_registry = self._load_job_registry()
     
-    def _load_job_registry(self) -> Dict:
+    def _load_job_registry(self) -> dict[str, Any]:
         """Load job registry from disk"""
         if self.job_registry_file.exists():
             try:
@@ -56,7 +61,7 @@ class UGROAgent:
         except Exception:
             pass
     
-    def check_cluster_health(self) -> Dict[str, Dict]:
+    def check_cluster_health(self) -> dict[str, dict[str, Any]]:
         """Check health of all nodes"""
         return self.cluster.check_health()
     
@@ -198,7 +203,7 @@ class UGROAgent:
         
         return True
     
-    def display_logs(self, job_name: str, rank: Optional[int] = None):
+    def display_logs(self, job_name: str, rank: int | None = None):
         """Display logs for a job"""
         if job_name not in self.job_registry["jobs"]:
             print(f"❌ Job '{job_name}' not found")
@@ -326,7 +331,7 @@ class UGROAgent:
         print(f"  • Experiments: {self.results_dir}")
         print(f"  • Total Jobs: {len(self.job_registry['jobs'])}")
     
-    def get_job_status(self, job_name: str) -> Optional[str]:
+    def get_job_status(self, job_name: str) -> str | None:
         """Get status of a specific job"""
         if job_name in self.job_registry["jobs"]:
             return self.job_registry["jobs"][job_name]["status"]

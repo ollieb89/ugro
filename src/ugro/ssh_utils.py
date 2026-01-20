@@ -1,7 +1,12 @@
-"""SSH utilities for remote execution"""
+"""SSH utilities for remote execution."""
+
+from __future__ import annotations
 
 import subprocess
-from typing import Tuple, Optional
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    pass
 
 
 class SSHClient:
@@ -26,7 +31,7 @@ class SSHClient:
             '-o', 'BatchMode=yes'
         ]
     
-    def run_command(self, command: str, timeout: int = 30) -> Tuple[bool, str, str]:
+    def run_command(self, command: str, timeout: int = 30) -> tuple[bool, str, str]:
         """Run command on remote host
         
         Args:
@@ -104,7 +109,7 @@ class SSHClient:
         except Exception:
             return False
     
-    def get_gpu_info(self) -> Tuple[bool, dict]:
+    def get_gpu_info(self) -> tuple[bool, dict]:
         """Get GPU information from remote host
         
         Returns:
@@ -139,7 +144,7 @@ class SSHClient:
         
         return False, {'available': False}
     
-    def check_python_environment(self) -> Tuple[bool, dict]:
+    def check_python_environment(self) -> tuple[bool, dict]:
         """Check Python environment on remote host
         
         Returns:

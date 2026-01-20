@@ -1,20 +1,40 @@
-"""
-UGRO: Unified GPU Resource Orchestrator
+"""UGRO: Unified GPU Resource Orchestrator.
 
 Personal-scale GPU cluster management and distributed training orchestration.
+
+This module re-exports from the ugro package for backward compatibility.
 """
 
-__version__ = "0.1.0"
-__author__ = "Oliver Buitelaar"
-__email__ = "buitelaar@gmail.com"
+from __future__ import annotations
 
-from .config import load_config, expand_paths, get_config_dir
-from .agent import UGROAgent, JobStatus
+# Re-export from ugro package
+from ugro import (
+    Cluster,
+    Job,
+    JobStatus,
+    SSHClient,
+    UGROAgent,
+    __author__,
+    __email__,
+    __version__,
+    expand_paths,
+    get_config_dir,
+    load_config,
+)
 
 __all__ = [
+    # Metadata
+    "__version__",
+    "__author__",
+    "__email__",
+    # Configuration
     "load_config",
-    "expand_paths", 
+    "expand_paths",
     "get_config_dir",
+    # Core classes
     "UGROAgent",
-    "JobStatus"
+    "Cluster",
+    "Job",
+    "JobStatus",
+    "SSHClient",
 ]

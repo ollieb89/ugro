@@ -1,10 +1,15 @@
-"""Job management for UGRO training jobs"""
+"""Job management for UGRO training jobs."""
+
+from __future__ import annotations
 
 import json
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from typing import Any
 
 
 class JobStatus:
@@ -27,7 +32,7 @@ class Job:
         epochs: int = 1,
         learning_rate: float = 0.0002,
         batch_size: int = 1,
-        results_dir: Optional[Path] = None
+        results_dir: Path | None = None
     ):
         """Initialize training job
         
@@ -63,8 +68,8 @@ class Job:
         # Job metadata
         self.status = JobStatus.PENDING
         self.created_at = datetime.now()
-        self.started_at: Optional[datetime] = None
-        self.completed_at: Optional[datetime] = None
+        self.started_at: datetime | None = None
+        self.completed_at: datetime | None = None
         
         # Training metrics
         self.metrics = {
@@ -75,16 +80,16 @@ class Job:
         }
         
         # Worker tracking
-        self.workers: List[str] = []
-        self.worker_status: Dict[str, str] = {}
+        self.workers: list[str] = []
+        self.worker_status: dict[str, str] = {}
         
         # Error tracking
-        self.errors: List[str] = []
+        self.errors: list[str] = []
         
         # Save initial job metadata
         self._save_metadata()
     
-    def start(self, workers: List[str]) -> bool:
+    def start(self, workers: list[str]) -> bool:
         """Start the training job
         
         Args:
@@ -125,7 +130,7 @@ class Job:
             
             self._save_metadata()
     
-    def add_metric(self, epoch: int, loss: float, accuracy: Optional[float] = None, epoch_time: Optional[float] = None):
+    def add_metric(self, epoch: int, loss: float, accuracy: float | None = None, epoch_time: float | None = None):
         """Add training metrics
         
         Args:
@@ -197,7 +202,7 @@ class Job:
         self._log_message("Job cancelled")
         self._save_metadata()
     
-    def get_progress(self) -> Dict[str, Any]:
+    def get_progress(self) -> dict[str, Any]:
         """Get job progress information
         
         Returns:
