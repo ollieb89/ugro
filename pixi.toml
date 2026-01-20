@@ -98,6 +98,8 @@ cpu = { features = ["cpu"] }
 
 [tasks]
 ugro = "python -m ugro.cli"
+ugro-health = "python -m ugro.cli health"
+ugro-test-health = "python src/test_cluster_health.py"
 test = "pytest -q"
 cov = "pytest --cov=ugro --cov-report=term-missing"
 lint = "ruff check ."

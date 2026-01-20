@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -12,17 +14,24 @@ if TYPE_CHECKING:
 class SSHClient:
     """Simple SSH client wrapper"""
     
-    def __init__(self, host: str, user: str, port: int = 22):
+    def __init__(self, host: str, user: str, port: int = 22, env_command: str | None = None, home_dir: str | None = None, project_dir: str | None = None):
         """Initialize SSH client
         
         Args:
             host: Remote host address
             user: Username for SSH connection
             port: SSH port (default: 22)
+            env_command: Command to prefix for environment activation (e.g., 'pixi run')
+            home_dir: Remote home directory
+            project_dir: Remote project directory where pixi.toml is located
         """
         self.host = host
         self.user = user
         self.port = port
+        self.env_command = env_command
+        self.home_dir = home_dir
+        self.project_dir = project_dir
+        self.ssh_executable = self._find_ssh_executable()
         self.ssh_options = [
             '-o', 'StrictHostKeyChecking=no',
             '-o', 'UserKnownHostsFile=/dev/null',
@@ -31,22 +40,70 @@ class SSHClient:
             '-o', 'BatchMode=yes'
         ]
     
-    def run_command(self, command: str, timeout: int = 30) -> tuple[bool, str, str]:
+    def _find_ssh_executable(self) -> str:
+        """Find the SSH executable on the system."""
+        # Try finding in PATH first
+        ssh_path = shutil.which("ssh")
+        if ssh_path:
+            return ssh_path
+            
+        # Fallback to common locations
+        common_paths = ["/usr/bin/ssh", "/usr/local/bin/ssh", "/bin/ssh"]
+        for path in common_paths:
+            if Path(path).exists():
+                return path
+                
+        return "ssh"  # Fallback to name and hope for the best at runtime
+    
+    def run_command(self, command: str, timeout: int = 30, use_env: bool = True) -> tuple[bool, str, str]:
         """Run command on remote host
         
         Args:
             command: Command to execute
             timeout: Command timeout in seconds
+            use_env: Whether to use the environment prefix if defined
             
         Returns:
             Tuple of (success, stdout, stderr)
         """
+        if use_env and self.env_command:
+            # If we're using pixi, try to find it in common locations if standard command fails
+            if self.env_command.startswith("pixi run") and self.home_dir:
+                pixi_locations = [
+                    "pixi",  # Try PATH first
+                    f"{self.home_dir.rstrip('/')}/.pixi/bin/pixi",
+                    "~/.pixi/bin/pixi"
+                ]
+                # Construct a shell command that tries multiple pixi locations
+                pixi_check = " || ".join([f"command -v {loc}" for loc in pixi_locations])
+                if self.project_dir:
+                    # Change to project directory before running pixi
+                    # Handle environment flags if present
+                    if "-e" in self.env_command:
+                        # Extract environment name from "pixi run -e cuda"
+                        parts = self.env_command.split()
+                        if "-e" in parts and len(parts) > parts.index("-e") + 1:
+                            env = parts[parts.index("-e") + 1]
+                            command = f"PIXI_BIN=$({pixi_check} | head -n 1); cd {self.project_dir} && $PIXI_BIN run -e {env} -- {command}"
+                        else:
+                            command = f"PIXI_BIN=$({pixi_check} | head -n 1); cd {self.project_dir} && $PIXI_BIN run {command}"
+                    else:
+                        command = f"PIXI_BIN=$({pixi_check} | head -n 1); cd {self.project_dir} && $PIXI_BIN run {command}"
+                else:
+                    command = f"PIXI_BIN=$({pixi_check} | head -n 1); $PIXI_BIN run {command}"
+            else:
+                command = f"{self.env_command} {command}"
+
+        # Wrap command in a login shell to ensure PATH and other env vars are loaded
+        # Using bash -l -c handles the case where pixi/conda are defined in .bashrc or .profile
+        wrapped_command = f"bash -l -c '{command}'"
+
         ssh_cmd = [
-            'ssh',
+            self.ssh_executable,
             f'-p{self.port}',
             *self.ssh_options,
             f'{self.user}@{self.host}',
-            command
+            wrapped_command
         ]
         
         try:
@@ -153,19 +210,24 @@ class SSHClient:
         checks = {}
         
         # Check Python version
-        success, stdout, _ = self.run_command('python3 --version', timeout=5)
+        success, stdout, stderr = self.run_command('python3 --version', timeout=5)
         checks['python'] = success
         if success:
             checks['python_version'] = stdout.strip()
+        else:
+            checks['error'] = f"python3 not found: {stderr.strip()}"
+            return False, checks
         
         # Check PyTorch
-        success, _, _ = self.run_command('python3 -c "import torch; print(torch.__version__)"', timeout=10)
+        success, stdout, stderr = self.run_command('python3 -c "import torch; print(torch.__version__)"', timeout=10)
         checks['pytorch'] = success
         if success:
             checks['pytorch_version'] = stdout.strip()
+        else:
+            checks['pytorch_error'] = stderr.strip() if stderr else "torch not installed"
         
         # Check CUDA availability
-        success, stdout, _ = self.run_command('python3 -c "import torch; print(torch.cuda.is_available())"', timeout=10)
+        success, stdout, stderr = self.run_command('python3 -c "import torch; print(torch.cuda.is_available())"', timeout=10)
         checks['cuda'] = success and 'True' in stdout.strip()
         
-        return all([checks['python'], checks['pytorch']]), checks
+        return all([checks.get('python', False), checks.get('pytorch', False)]), checks

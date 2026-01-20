@@ -22,17 +22,38 @@ class Cluster:
         self.config = config
         self.workers = config.get('workers', [])
         self.master = config.get('master', {})
+        
+        # Get environment info
+        env_config = config.get('environment', {})
+        conda_env = env_config.get('conda_env')
+        
+        # Determine environment command (prefer pixi for this project)
+        env_command = None
+        if conda_env:
+            # If explicitly set to conda type, use conda
+            if env_config.get('type') == 'conda':
+                env_command = f"conda run -n {conda_env}"
+            else:
+                # Default to pixi run with cuda environment for this project
+                env_command = "pixi run -e cuda"
+        
         self.ssh_clients = {}
-        self._initialize_ssh_clients()
+        self._initialize_ssh_clients(env_command)
     
-    def _initialize_ssh_clients(self):
+    def _initialize_ssh_clients(self, env_command: str | None = None):
         """Initialize SSH clients for all workers"""
         for worker in self.workers:
             worker_name = worker['name']
+            # Get worker-specific paths from config
+            home_dir = worker.get('paths', {}).get('home')
+            project_dir = worker.get('paths', {}).get('project')
             self.ssh_clients[worker_name] = SSHClient(
                 host=worker['ip'],
                 user=worker['user'],
-                port=worker.get('ssh_port', 22)
+                port=worker.get('ssh_port', 22),
+                env_command=env_command,
+                home_dir=home_dir,
+                project_dir=project_dir
             )
     
     def check_health(self) -> dict[str, dict[str, Any]]:
