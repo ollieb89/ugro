@@ -16,8 +16,12 @@ if TYPE_CHECKING:
 
 
 def get_config_dir() -> Path:
-    """Get configuration directory"""
-    return Path(__file__).parent.parent / "config"
+    """Get configuration directory.
+    
+    Returns path to project root config/ directory.
+    Path resolution: src/ugro/config.py -> src/ugro/ -> src/ -> project_root/ -> config/
+    """
+    return Path(__file__).parent.parent.parent / "config"
 
 
 def load_config(config_name: str = "cluster.yaml") -> dict[str, Any]:
