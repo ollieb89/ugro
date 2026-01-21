@@ -3,6 +3,12 @@ cluster:
   location: "Trondheim, Norway"
   description: "Personal-scale GPU cluster for LLM training"
   
+  queue:
+    type: "redis"
+    redis_host: "192.168.1.100"
+    redis_port: 6379
+    redis_db: 0
+  
   # Master node (orchestrator)
   master:
     hostname: "gpu-master"
@@ -54,14 +60,14 @@ workers:
       project: "/home/ollie/Tools/ugro"
       scripts: "/home/ollie/Tools/ugro/scripts"
 
-# Local paths (on master)
+# Local paths (on master)# In your config file (pixi.toml or config.yaml)
 paths:
-  project_root: "/home/ollie/Development/Tools/ugro"
-  scripts: "/home/ollie/Development/Tools/ugro/scripts"
-  config: "/home/ollie/Development/Tools/ugro/config"
-  data: "/home/ollie/Development/Tools/ugro/data"
-  logs: "/home/ollie/Development/Tools/ugro/logs"
-  experiments: "/home/ollie/Development/Tools/ugro/data/experiments"
+  project_root: $HOME/Development/Tools/ugro
+  scripts: $HOME/Development/Tools/ugro/scripts
+  config: $HOME/Development/Tools/ugro/config
+  data: $HOME/Development/Tools/ugro_data
+  logs: $HOME/Development/Tools/ugro_data/logs
+  experiments: $HOME/Development/Tools/ugro_data/experiments
 
 # Training defaults
 training:
@@ -91,7 +97,7 @@ environment:
 logging:
   level: "INFO"
   format: "[%(asctime)s] %(name)s - %(levelname)s - %(message)s"
-  file: "/home/ollie/Development/Tools/ugro/logs/agent.log"
+  file: "$HOME/Development/Tools/ugro/logs/agent.log"
   keep_days: 7
 
 # GitHub Webhook Configuration
