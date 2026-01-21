@@ -85,12 +85,15 @@ class ResourceTracker:
         node_scores = [] # Tuple (node_name, waste_score)
         
         # Logic to check self.cluster_config vs job_resources
-        # For MVP, we'll return all if no config (localhost fallback)
+        # For MVP, fall back to localhost if config doesn't define schedulable nodes.
         if not self.cluster_config:
-            # Check local usage if possible or just return localhost
-            return ["localhost"] 
+            return ["localhost"]
 
-        for node_name, node_info in self.cluster_config.get('nodes', {}).items():
+        nodes_cfg = self.cluster_config.get('nodes', {})
+        if not isinstance(nodes_cfg, dict) or not nodes_cfg:
+            return ["localhost"]
+
+        for node_name, node_info in nodes_cfg.items():
             # Check GPU count
             total_gpus = 1 
             if 'gpu_count' in node_info:
