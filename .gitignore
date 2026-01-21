@@ -1,3 +1,6 @@
+# UGRO Project .gitignore
+# Prevents committing unnecessary files to version control
+
 # Python
 __pycache__/
 *.py[cod]
@@ -20,29 +23,214 @@ wheels/
 .installed.cfg
 *.egg
 .pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
 
-# Pixi
+# Pixi Package Manager
 .pixi/
 pixi.lock
 
-# IDE
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+.env/
+.env.local
+.env.*.local
+
+# IDE & Editors
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# Project
-.env
-.env.local
-*.log
-data/experiments/*/logs/
-data/experiments/*/checkpoints/
-data/*.json
-data/*.jsonl
-
-# OS
+*~
 .DS_Store
 Thumbs.db
-# pixi environments
-.pixi/*
-!.pixi/config.toml
+*.sublime-project
+*.sublime-workspace
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+
+# Machine Learning & AI
+*.pkl
+*.pickle
+*.joblib
+*.model
+*.bin
+*.safetensors
+*.h5
+*.hdf5
+*.pth
+*.pt
+*.ckpt
+*.pb
+
+# Dataset & Experiment Files
+data/experiments/*/logs/
+data/experiments/*/checkpoints/
+data/experiments/*/wandb/
+data/experiments/*/mlruns/
+data/experiments/*/outputs/
+data/raw/
+data/processed/
+data/*.json
+data/*.jsonl
+data/*.csv
+data/*.parquet
+data/*.hdf5
+
+# HPO & Ray
+ray_results/
+.ray/
+*.rdb
+*.sqlite
+*.sqlite3
+studies/*.db
+mlflow.db
+wandb/
+
+# Logs & Output
+*.log
+logs/
+outputs/
+results/
+checkpoints/
+runs/
+
+# Temporary Files
+*.tmp
+*.temp
+*.bak
+*.backup
+.cache/
+*.cache
+
+# OS Generated
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Security & Secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.crt
+secrets/
+credentials/
+api_keys.txt
+
+# W&B (Weights & Biases)
+wandb/
+.wandb/
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# Hugging Face Cache
+~/.cache/huggingface/
+hub/
+
+# Model Checkpoints (Large files)
+*.safetensors
+*.bin
+*.pth
+*.pt
+*.ckpt
+checkpoints/
+models/
+
+# Profiling & Debugging
+*.prof
+*.trace
+profile/
+debug/
+
+# Documentation Build
+docs/_build/
+docs/.doctrees/
+site/
+
+# Package Manager Lock Files (keep version control for pixi.toml)
+# pixi.lock - Commented out if you want version control of dependencies
+# Uncomment below if you don't want to track lock file
+# pixi.lock
+
+# Local Configuration
+config/local_*.yaml
+config/local_*.yml
+config/dev_*.yaml
+config/dev_*.yml
+
+# Test Artifacts
+.coverage
+.pytest_cache/
+test-reports/
+.nyc_output
+
+# Backup Files
+*.backup
+*.bak
+*.old
+*.orig
+
+# Generated Files
+generated/
+dist/
+build/
+
+# Airflow
+airflow.cfg
+airflow_home/
+logs/
+plugins/
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Kubernetes
+*.kubeconfig
+kubeconfig
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Monitoring & Metrics
+prometheus.yml
+grafana-data/
+
+# Local Scripts
+scripts/local_*
+scripts/dev_*
+
+# Temporary experiment directories
+temp/
+tmp/
+scratch/
+
+# Large model files (common in ML projects)
+*.gguf
+*.ggml
+*.model
+
+# PEFT/LoRA artifacts
+adapter_model.bin
+adapter_config.json
+non_lora_trainables.bin
