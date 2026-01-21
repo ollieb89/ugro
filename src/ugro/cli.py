@@ -6,6 +6,7 @@ Provides command-line interface for GPU cluster orchestration and distributed tr
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 from typing import Annotated, Any, Optional
@@ -14,6 +15,11 @@ import typer
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
+
+# Configure logging to suppress noisy external libraries
+import logging
+logging.getLogger("alembic").setLevel(logging.WARNING)
+logging.getLogger("mlflow").setLevel(logging.WARNING)
 
 from .agent import UGROAgent
 from .config import load_config, QueueType
@@ -514,9 +520,6 @@ def test_setup(
 def main():
     app()
 
-if __name__ == "__main__":
-    main()
-
 
 # =============================================================================
 # HPO (Hyperparameter Optimization) Command Group
@@ -557,12 +560,32 @@ def hpo_sweep(
     """
     from pathlib import Path
     
+    # Validate W&B project name if provided
+    if wandb_project is not None:
+        try:
+            from .hpo.security import validate_project_name, mask_api_key
+            if not validate_project_name(wandb_project):
+                error_console.print(f"❌ Invalid W&B project name '{wandb_project}'")
+                error_console.print("   Project names must be alphanumeric with hyphens/underscores")
+                error_console.print("   Length: 1-128 characters")
+                raise typer.Exit(code=1)
+            
+            # Mask API key in logs if present
+            api_key = os.environ.get('WANDB_API_KEY')
+            if api_key:
+                console.print(f"   W&B Project: {wandb_project}", style="blue")
+                console.print(f"   API Key: {mask_api_key(api_key)}", style="dim blue")
+        except ImportError:
+            # Security module not available, skip validation
+            console.print("   ⚠️  W&B security validation not available", style="yellow")
+    
     try:
         from ugro.hpo.config import HPOConfig, OptimizerAlgorithm
         from ugro.hpo.search_space import (
             load_search_space_yaml,
             parse_parameter_bounds,
             parse_objectives,
+            parse_constraints,
         )
         from ugro.hpo.objective import LoRAFinetuningObjective
         from ugro.hpo.optimizer import UGROOptimizer
@@ -581,10 +604,16 @@ def hpo_sweep(
     config_dict = load_search_space_yaml(search_space)
     bounds = parse_parameter_bounds(config_dict)
     objectives = parse_objectives(config_dict)
+    constraints = parse_constraints(config_dict)
     
     console.print(f"   Parameters: {len(bounds)}")
     for b in bounds:
         console.print(f"      • {b.name}: {b.type} [{b.min} - {b.max}]" if b.type != "categorical" else f"      • {b.name}: {b.choices}")
+    
+    if constraints:
+        console.print(f"   Constraints: {len(constraints)}")
+        for c in constraints:
+            console.print(f"      • {c}")
     
     if dry_run:
         console.print("\n✅ Dry run complete - config is valid", style="green")
@@ -615,6 +644,10 @@ def hpo_sweep(
         dataset_name=dataset,
         max_steps=max_steps,
         use_mlflow=tracking_uri is not None,
+        use_wandb=wandb_project is not None,
+        constraints=constraints,
+        objectives=[{"name": obj.name, "direction": obj.direction} for obj in objectives],
+        parameter_bounds=bounds,
     )
     
     # Run optimization
@@ -622,6 +655,8 @@ def hpo_sweep(
     console.print(f"   Storage: {storage_backend}")
     if tracking_uri:
         console.print(f"   Tracking: {tracking_uri}")
+    if wandb_project:
+        console.print(f"   W&B Project: {wandb_project}")
     
     optimizer = UGROOptimizer(hpo_config, objective)
     
@@ -722,3 +757,7 @@ def hpo_export_best(
     except Exception as e:
         error_console.print(f"❌ Export failed: {e}")
         raise typer.Exit(code=1)
+
+
+if __name__ == "__main__":
+    main()
