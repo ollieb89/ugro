@@ -6,10 +6,13 @@ including LoRA fine-tuning for LLMs with Ray Tune and MLflow integration.
 
 from __future__ import annotations
 
+import ast
 import logging
+import operator
+import os
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, List, Tuple
 
 import torch
 
@@ -17,7 +20,139 @@ if TYPE_CHECKING:
     from datasets import Dataset
     from transformers import PreTrainedModel, PreTrainedTokenizer
 
+# Optional W&B import
+try:
+    import wandb
+    WANDB_AVAILABLE = True
+except ImportError:
+    WANDB_AVAILABLE = False
+    wandb = None
+
 logger = logging.getLogger(__name__)
+
+
+def validate_constraints(
+    params: Dict[str, Any], 
+    constraints: List[str]
+) -> Tuple[bool, List[str]]:
+    """Validate parameter constraints.
+    
+    Args:
+        params: Dictionary of parameter names to values
+        constraints: List of constraint expressions (e.g., "lora_alpha >= lora_r")
+        
+    Returns:
+        Tuple of (is_valid, list_of_violated_constraints)
+        
+    Note:
+        Uses safe evaluation with AST parsing to avoid code injection.
+        Only supports basic comparison operators: >=, <=, >, <, ==, !=
+    """
+    if not constraints:
+        return True, []
+    
+    # Map operator strings to actual operator functions
+    operators = {
+        ast.Gt: operator.gt,
+        ast.GtE: operator.ge,
+        ast.Lt: operator.lt,
+        ast.LtE: operator.le,
+        ast.Eq: operator.eq,
+        ast.NotEq: operator.ne,
+    }
+    
+    violated = []
+    
+    for constraint in constraints:
+        try:
+            # Parse the constraint expression
+            tree = ast.parse(constraint, mode='eval')
+            
+            if not isinstance(tree.body, ast.Compare):
+                logger.warning(f"Invalid constraint format: {constraint}")
+                violated.append(constraint)
+                continue
+            
+            # Extract left operand, operator, and right operand
+            left = tree.body.left
+            ops = tree.body.ops
+            comparators = tree.body.comparators
+            
+            # Evaluate left operand (should be a parameter name)
+            if isinstance(left, ast.Name):
+                left_val = params.get(left.id)
+                if left_val is None:
+                    logger.warning(f"Parameter '{left.id}' not found in params for constraint: {constraint}")
+                    violated.append(constraint)
+                    continue
+            else:
+                logger.warning(f"Invalid left operand in constraint: {constraint}")
+                violated.append(constraint)
+                continue
+            
+            # Evaluate each comparison
+            for op, comp in zip(ops, comparators):
+                # Get the operator function
+                op_type = type(op)
+                if op_type not in operators:
+                    logger.warning(f"Unsupported operator in constraint: {constraint}")
+                    violated.append(constraint)
+                    continue
+                
+                # Evaluate right operand
+                if isinstance(comp, ast.Name):
+                    right_val = params.get(comp.id)
+                    if right_val is None:
+                        logger.warning(f"Parameter '{comp.id}' not found in params for constraint: {constraint}")
+                        violated.append(constraint)
+                        continue
+                elif isinstance(comp, ast.Constant):
+                    right_val = comp.value
+                else:
+                    logger.warning(f"Invalid right operand in constraint: {constraint}")
+                    violated.append(constraint)
+                    continue
+                
+                # Apply the operator
+                op_func = operators[op_type]
+                if not op_func(left_val, right_val):
+                    violated.append(constraint)
+                    break
+                # For chained comparisons, update left_val for next comparison
+                left_val = right_val
+                
+        except Exception as e:
+            logger.error(f"Error evaluating constraint '{constraint}': {e}")
+            violated.append(constraint)
+    
+    is_valid = len(violated) == 0
+    return is_valid, violated
+
+
+def get_penalty_metrics(
+    objectives: List[Dict[str, Any]], 
+    penalty_value: float = 1e6
+) -> Dict[str, float]:
+    """Generate penalty metrics for constraint violations.
+    
+    Args:
+        objectives: List of objective dictionaries with 'direction' key
+        penalty_value: Large penalty value to use
+        
+    Returns:
+        Dictionary of objective names with penalty values
+    """
+    metrics = {}
+    for obj in objectives:
+        name = obj.get("name", "eval_loss")
+        direction = obj.get("direction", "minimize")
+        
+        if direction == "minimize":
+            metrics[name] = penalty_value
+        else:  # maximize
+            metrics[name] = -penalty_value
+    
+    return metrics
 
 
 class BaseObjective(ABC):
@@ -64,7 +199,11 @@ class LoRAFinetuningObjective(BaseObjective):
         max_train_samples: int = 10000,
         max_eval_samples: int = 1000,
         use_mlflow: bool = True,
+        use_wandb: bool = True,
         target_modules: Optional[list[str]] = None,
+        constraints: Optional[List[str]] = None,
+        objectives: Optional[List[Dict[str, Any]]] = None,
+        parameter_bounds: Optional[List["ParameterBound"]] = None,
     ):
         """Initialize the LoRA fine-tuning objective.
 
@@ -77,7 +216,11 @@ class LoRAFinetuningObjective(BaseObjective):
             max_train_samples: Limit training samples (for speed)
             max_eval_samples: Limit evaluation samples
             use_mlflow: Enable MLflow logging
+            use_wandb: Enable W&B logging
             target_modules: LoRA target modules (default: q_proj, v_proj)
+            constraints: List of constraint expressions to validate
+            objectives: List of objective dictionaries with direction info
+            parameter_bounds: List of parameter bounds for conditional logic
         """
         self.model_id = model_id
         self.dataset_name = dataset_name
@@ -87,7 +230,11 @@ class LoRAFinetuningObjective(BaseObjective):
         self.max_train_samples = max_train_samples
         self.max_eval_samples = max_eval_samples
         self.use_mlflow = use_mlflow
+        self.use_wandb = use_wandb
         self.target_modules = target_modules or ["q_proj", "v_proj"]
+        self.constraints = constraints or []
+        self.objectives = objectives or [{"name": "eval_loss", "direction": "minimize"}]
+        self.parameter_bounds = parameter_bounds or []
 
         # Lazy-loaded resources
         self._tokenizer: Optional[PreTrainedTokenizer] = None
@@ -171,27 +318,76 @@ class LoRAFinetuningObjective(BaseObjective):
             Trainer,
             TrainingArguments,
         )
+        from ugro.hpo.search_space import apply_conditional_parameters
 
         # Try to get Ray session (may be None if running locally)
         try:
-            from ray.air import session
+            from ray import tune
 
-            trial_id = session.get_trial_id() if session else "local"
-        except ImportError:
+            trial_id = tune.get_trial_id() if tune.is_session_enabled() else "local"
+            session = tune
+        except (ImportError, RuntimeError):
             session = None
             trial_id = "local"
 
         run_name = f"lora-trial-{trial_id}"
 
-        # Optional MLflow tracking
+        # Apply conditional parameter logic
+        if self.parameter_bounds:
+            original_params = params.copy()
+            params = apply_conditional_parameters(params, self.parameter_bounds)
+            if params != original_params:
+                logger.info(f"Applied conditional parameters: {original_params} -> {params}")
+
+        # Validate constraints before training
+        if self.constraints:
+            is_valid, violated = validate_constraints(params, self.constraints)
+            if not is_valid:
+                logger.warning(f"Trial violates constraints: {violated}")
+                logger.warning(f"Trial parameters: {params}")
+                
+                # Return penalty metrics for constraint violations
+                penalty_metrics = get_penalty_metrics(self.objectives)
+                
+                # Log to MLflow if enabled
+                if self.use_mlflow:
+                    import mlflow
+                    mlflow.set_tag("constraint_violations", str(violated))
+                    mlflow.log_metrics(penalty_metrics)
+                
+                # Log to W&B if enabled
+                if self.use_wandb and WANDB_AVAILABLE and os.getenv("WANDB_PROJECT"):
+                    try:
+                        import wandb
+                        wandb.log({"constraint_violations": str(violated)})
+                        wandb.log(penalty_metrics)
+                    except Exception as e:
+                        logger.warning(f"Failed to log to W&B: {e}")
+                
+                # Cleanup W&B if it was initialized
+                if self.use_wandb and os.getenv("WANDB_PROJECT"):
+                    try:
+                        import wandb
+                        if wandb.run is not None:
+                            wandb.finish()
+                    except Exception as cleanup_error:
+                        logger.warning(f"Failed to cleanup W&B run: {cleanup_error}")
+                
+                return penalty_metrics
+
+        # Optional MLflow and W&B tracking
         mlflow_context = self._get_mlflow_context(run_name)
+        wandb_run = self._get_wandb_context(run_name)
 
         with mlflow_context:
             try:
                 if self.use_mlflow:
                     import mlflow
-
                     mlflow.log_params(params)
+                
+                # Log parameters to W&B
+                if self.use_wandb and wandb_run:
+                    wandb_run.config.update(params)
 
                 logger.info(f"Starting trial with params: {params}")
 
@@ -285,15 +481,13 @@ class LoRAFinetuningObjective(BaseObjective):
                     "train_loss": result.training_loss,
                 }
 
-                # 10. Log to MLflow
+                # 10. Log to MLflow and W&B
                 if self.use_mlflow:
                     import mlflow
-
                     mlflow.log_metrics(metrics)
-
-                # 11. Report to Ray session
-                if session is not None:
-                    session.report(metrics)
+                
+                if self.use_wandb and wandb_run:
+                    wandb_run.log(metrics)
 
                 logger.info(f"Trial complete: {metrics}")
                 
@@ -309,13 +503,16 @@ class LoRAFinetuningObjective(BaseObjective):
 
             except Exception as e:
                 logger.error(f"Trial failed: {e}", exc_info=True)
-
-                # Report failure metrics to Ray
-                if session is not None:
-                    session.report(
-                        {"eval_loss": float("inf"), "eval_perplexity": float("inf")}
-                    )
                 raise
+            finally:
+                # Ensure W&B run is properly finished
+                if self.use_wandb and wandb_run:
+                    try:
+                        import wandb
+                        if wandb.run is not None:
+                            wandb.finish()
+                    except Exception as cleanup_error:
+                        logger.warning(f"Failed to cleanup W&B run: {cleanup_error}")
 
     def _get_mlflow_context(self, run_name: str) -> Any:
         """Get MLflow run context or null context.
@@ -340,6 +537,37 @@ class LoRAFinetuningObjective(BaseObjective):
 
         return nullcontext()
 
+    def _get_wandb_context(self, run_name: str):
+        """Get W&B run context or null context.
+
+        Args:
+            run_name: Name for the W&B run
+
+        Returns:
+            Context manager for the run
+        """
+        if self.use_wandb and WANDB_AVAILABLE and os.getenv("WANDB_PROJECT"):
+            try:
+                # Initialize wandb run
+                wandb.init(
+                    project=os.getenv("WANDB_PROJECT"),
+                    name=run_name,
+                    reinit=True,
+                    config={
+                        "model_id": self.model_id,
+                        "dataset_name": self.dataset_name,
+                        "max_steps": self.max_steps,
+                    }
+                )
+                return wandb
+            except Exception as e:
+                logger.warning(f"Failed to initialize W&B: {e}")
+                self.use_wandb = False
+
+        # Return null context if W&B not available
+        from contextlib import nullcontext
+        return nullcontext()
+
 
 class RayTuneReportCallback:
     """HuggingFace Trainer callback for Ray Tune session reporting.
@@ -351,9 +579,9 @@ class RayTuneReportCallback:
     def __init__(self):
         """Initialize callback."""
         try:
-            from ray.air import session
+            from ray import tune
 
-            self._session = session
+            self._session = tune
         except ImportError:
             self._session = None
             logger.warning("Ray not available, RayTuneReportCallback will be no-op")
@@ -389,12 +617,18 @@ class RayTuneReportCallback:
                 torch.tensor(metrics["eval_loss"])
             ).item()
 
-        self._session.report(report_metrics)
+        try:
+            self._session.report(report_metrics)
+        except (AttributeError, RuntimeError):
+            # Ray Tune API changed or not in session context
+            pass
 
 
 def create_objective_factory(
     model_id: str,
     dataset_name: str,
+    constraints: Optional[List[str]] = None,
+    objectives: Optional[List[Dict[str, Any]]] = None,
     **kwargs: Any,
 ) -> Callable[[Dict[str, Any]], Dict[str, float]]:
     """Factory function to create objective callable.
@@ -404,6 +638,8 @@ def create_objective_factory(
     Args:
         model_id: HuggingFace model identifier
         dataset_name: Dataset name from HuggingFace Hub
+        constraints: List of constraint expressions to validate
+        objectives: List of objective dictionaries with direction info
         **kwargs: Additional arguments passed to LoRAFinetuningObjective
 
     Returns:
@@ -412,6 +648,8 @@ def create_objective_factory(
     objective = LoRAFinetuningObjective(
         model_id=model_id,
         dataset_name=dataset_name,
+        constraints=constraints,
+        objectives=objectives,
         **kwargs,
     )
     return objective
