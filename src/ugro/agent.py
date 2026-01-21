@@ -61,6 +61,14 @@ class UGROAgent:
                 self.config = load_config(config_name)
                 self.app_config = None
         self.cluster = Cluster(self.config)
+        
+        # Ensure workers are loaded (handle both 'workers' and 'nodes' fields)
+        if not self.cluster.workers and 'nodes' in self.config:
+            # Convert nodes dict to workers list
+            nodes = self.config['nodes']
+            self.cluster.workers = list(nodes.values())
+            # Re-initialize SSH clients now that we have workers
+            self.cluster._initialize_ssh_clients(self.cluster.env_command)
 
         # Database and Queue
         self.database = Database()

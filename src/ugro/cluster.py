@@ -34,9 +34,10 @@ class Cluster:
             if env_config.get('type') == 'conda':
                 env_command = f"conda run -n {conda_env}"
             else:
-                # Default to pixi run with cuda environment for this project
-                env_command = "pixi run -e cuda"
+                # Default to pixi run with default environment
+                env_command = "pixi run"
         
+        self.env_command = env_command
         self.ssh_clients = {}
         self._initialize_ssh_clients(env_command)
     

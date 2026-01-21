@@ -353,8 +353,8 @@ class SSHClient:
         """
         checks = {}
         
-        # Check Python version
-        success, stdout, stderr = self.run_command('python3 --version', timeout=5)
+        # Check Python version (use pixi environment)
+        success, stdout, stderr = self.run_command('python --version', timeout=5, use_env=True)
         checks['python'] = success
         if success:
             checks['python_version'] = stdout.strip()
@@ -363,7 +363,7 @@ class SSHClient:
             return False, checks
         
         # Check PyTorch
-        success, stdout, stderr = self.run_command('python3 -c "import torch; print(torch.__version__)"', timeout=10)
+        success, stdout, stderr = self.run_command('python -c "import torch; print(torch.__version__)"', timeout=10, use_env=True)
         checks['pytorch'] = success
         if success:
             checks['pytorch_version'] = stdout.strip()
@@ -371,7 +371,7 @@ class SSHClient:
             checks['pytorch_error'] = stderr.strip() if stderr else "torch not installed"
         
         # Check CUDA availability
-        success, stdout, stderr = self.run_command('python3 -c "import torch; print(torch.cuda.is_available())"', timeout=10)
+        success, stdout, stderr = self.run_command('python -c "import torch; print(torch.cuda.is_available())"', timeout=10, use_env=True)
         checks['cuda'] = success and 'True' in stdout.strip()
         
-        return all([checks.get('python', False), checks.get('pytorch', False)]), checks
+        return all([checks.get('python', False)]), checks

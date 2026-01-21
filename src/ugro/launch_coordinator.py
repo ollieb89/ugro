@@ -23,8 +23,7 @@ if TYPE_CHECKING:
 
 from .cluster import Cluster
 from .job import Job
-from .cluster import Cluster
-from .job import Job
+from .queues.models import JobStatus
 from .ssh_utils import SSHClient
 from .commands import CommandBuilder, TrainingJobParams
 
@@ -328,6 +327,7 @@ class LaunchCoordinator:
         # but since CommandBuilder produces a precise string, regening it is safer)
         
         # Re-build command for specific rank to ensure safety (overkill but safe)
+        rank = worker_config['rank']
         params = TrainingJobParams(
             job_id=job.name,
             model=job.model,
@@ -342,6 +342,9 @@ class LaunchCoordinator:
             script_path=allocation_plan.get("script_path", "scripts/train_production.py") # Ensure script path is passed or defaulted
         )
         command = CommandBuilder.build_torchrun_command(params)
+        
+        # TODO: Wrap with pixi environment when workers have pixi installed
+        # command = CommandBuilder.build_env_wrapper(command, env_type="pixi", env_name="default")
         
         # Update job worker status
         job.update_worker_status(worker_name, JobStatus.RUNNING, f"Starting torchrun (rank {rank})")

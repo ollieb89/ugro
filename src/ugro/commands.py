@@ -77,7 +77,10 @@ class CommandBuilder:
         if env_type == "pixi":
             # Check for pixi in common locations or PATH
             # We assume project root is current working directory where this runs
-            return f"pixi run -e {shlex.quote(env_name)} -- {command}"
+            if env_name == "default":
+                return f"pixi run -- {command}"
+            else:
+                return f"pixi run -e {shlex.quote(env_name)} -- {command}"
         elif env_type == "conda":
             return f"conda run -n {shlex.quote(env_name)} -- {command}"
         else:
