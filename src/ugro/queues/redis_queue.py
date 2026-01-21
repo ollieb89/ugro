@@ -96,19 +96,21 @@ class RedisJobQueue(JobQueue):
 
     def submit(self, job: Job) -> str:
         pipeline = self.client.pipeline()
+
+        priority = int(job.priority)
         
         # 1. Store job details (using _job_key for cluster compatibility)
         pipeline.hset(self._job_key(job.id), mapping={
             "data": job.model_dump_json(),
             "status": job.status.value,
-            "priority": job.priority.value,
+            "priority": priority,
             "created_at": job.created_at.isoformat()
         })
         
         # 2. Add to pending queue (Sorted Set)
         # Score is priority. ZREVRANGE gives highest first.
         # Redis doesn't guarantee FIFO for same score, but usually insertion order.
-        pipeline.zadd(self._key("queue:pending"), {job.id: job.priority.value})
+        pipeline.zadd(self._key("queue:pending"), {job.id: priority})
         
         pipeline.execute()
         return job.id
@@ -327,10 +329,11 @@ class RedisJobQueue(JobQueue):
         return found_jobs
 
     def update_job(self, job: Job) -> None:
+        priority = int(job.priority)
         self.client.hset(self._job_key(job.id), mapping={
             "data": job.model_dump_json(),
             "status": job.status.value,
-            "priority": job.priority.value
+            "priority": priority
         })
         
         # If status changed to terminal, remove from running

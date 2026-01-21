@@ -2,13 +2,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, List, Dict, Union
+from typing import Any, Optional, List, Dict, Union
 from enum import Enum
 import yaml
 from pydantic import BaseModel, Field, field_validator
-
-if TYPE_CHECKING:
-    from typing import Any
 
 
 def get_config_dir() -> Path:
@@ -159,6 +156,9 @@ class AppConfig(BaseModel):
             
         # Fallback/Direct mapping if structure matches
         return cls(**raw)
+
+
+AppConfig.model_rebuild()
 
 
 def load_config(config_name: str = "cluster.yaml") -> dict[str, Any]:
