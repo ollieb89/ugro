@@ -300,7 +300,8 @@ def queue_cancel(ctx: typer.Context, job_id: str):
 @app.command("run-worker")
 def run_worker(
     ctx: typer.Context, 
-    loop_interval: Annotated[float, typer.Option("--interval", "-i", help="Polling interval")] = 5.0
+    loop_interval: Annotated[float, typer.Option("--interval", "-i", help="Polling interval")] = 5.0,
+    once: Annotated[bool, typer.Option("--once", help="Process at most one job then exit")] = False,
 ):
     """Start a worker process to consume jobs from the queue."""
     # New Implementation using Scheduler
@@ -311,7 +312,15 @@ def run_worker(
     
     tracker = ResourceTracker(cluster_config=config.get('cluster', {}))
     scheduler = Scheduler(queue=queue, resource_tracker=tracker, poll_interval=loop_interval)
-    
+
+    if once:
+        job = scheduler.schedule_next()
+        if job:
+            scheduler.execute_job(job)
+        else:
+            console.print("No schedulable jobs.", style="yellow")
+        return
+
     scheduler.loop()
 
 

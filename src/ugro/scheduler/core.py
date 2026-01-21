@@ -1,5 +1,6 @@
 import time
 import logging
+from datetime import datetime
 from typing import Optional
 from ..queues.base import JobQueue
 from ..queues.models import Job, JobStatus
@@ -117,6 +118,7 @@ class Scheduler:
                     # Let's assume this loop is running in `ugro run-worker`.
                     self.execute_job(job)
                 else:
+                    print(f"⏳ No schedulable jobs. Sleeping {self.poll_interval}s...", flush=True)
                     time.sleep(self.poll_interval)
         except KeyboardInterrupt:
             logger.info("Scheduler stopping...")
