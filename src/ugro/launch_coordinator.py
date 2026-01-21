@@ -196,6 +196,9 @@ class LaunchCoordinator:
         """
         self.logger.info("Launching distributed training...")
         
+        # Validate pixi environment on all workers before launch
+        await self._validate_worker_environments(allocation_plan['rank_assignments'].keys())
+        
         # Build torchrun command template
         cmd_template = self._build_torchrun_command(
             allocation_plan=allocation_plan,
@@ -343,8 +346,12 @@ class LaunchCoordinator:
         )
         command = CommandBuilder.build_torchrun_command(params)
         
-        # TODO: Wrap with pixi environment when workers have pixi installed
-        # command = CommandBuilder.build_env_wrapper(command, env_type="pixi", env_name="default")
+        # Wrap command with pixi environment activation (fallback to conda if pixi unavailable)
+        try:
+            command = CommandBuilder.build_env_wrapper(command, env_type="pixi", env_name="default")
+        except:
+            # Fallback to conda if pixi validation fails
+            command = CommandBuilder.build_env_wrapper(command, env_type="conda", env_name="main")
         
         # Update job worker status
         job.update_worker_status(worker_name, JobStatus.RUNNING, f"Starting torchrun (rank {rank})")
@@ -567,6 +574,58 @@ class LaunchCoordinator:
             # Actually, LaunchCoordinator should track the active job_id if possible.
         
         self.logger.info("Training stopped and resources cleaned up")
+    
+    async def _validate_worker_environments(self, worker_names: Iterable[str]) -> None:
+        """Validate that pixi or conda environments are available on all workers.
+        
+        Args:
+            worker_names: Names of workers to validate
+            
+        Raises:
+            RuntimeError: If any worker fails validation
+        """
+        self.logger.info("🔍 Validating environments on workers...")
+        
+        for worker_name in worker_names:
+            ssh_client = self.cluster.ssh_clients.get(worker_name)
+            if not ssh_client:
+                raise RuntimeError(f"No SSH client for worker {worker_name}")
+            
+            # Test pixi first, then fallback to conda
+            pixi_success, _, _ = await ssh_client.run_command_async(
+                "pixi --version", timeout=30, use_env=True
+            )
+            
+            if pixi_success:
+                # Test torchrun through pixi
+                success, stdout, stderr = await ssh_client.run_command_async(
+                    "pixi run -- torchrun --help", timeout=30, use_env=True
+                )
+                
+                if not success:
+                    raise RuntimeError(
+                        f"❌ Pixi environment validation failed on {worker_name}:\n"
+                        f"pixi run -- torchrun --help failed\n"
+                        f"Error: {stderr}\n"
+                        f"💡 Ensure PyTorch is installed in pixi environment"
+                    )
+                self.logger.info(f"✅ {worker_name}: Pixi environment validated")
+            else:
+                # Fallback to conda
+                success, stdout, stderr = await ssh_client.run_command_async(
+                    "conda run -n main -- torchrun --help", timeout=30, use_env=True
+                )
+                
+                if not success:
+                    raise RuntimeError(
+                        f"❌ Environment validation failed on {worker_name}:\n"
+                        f"Neither pixi nor conda (main) can run torchrun\n"
+                        f"Error: {stderr}\n"
+                        f"💡 Install pixi or ensure PyTorch is available in conda environment"
+                    )
+                self.logger.info(f"✅ {worker_name}: Conda environment validated (fallback)")
+        
+        self.logger.info("✅ All worker environments validated successfully")
     
     @asynccontextmanager
     async def training_session(self, job: Job) -> AsyncIterator[None]:

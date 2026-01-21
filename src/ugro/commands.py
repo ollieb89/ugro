@@ -84,4 +84,5 @@ class CommandBuilder:
         elif env_type == "conda":
             return f"conda run -n {shlex.quote(env_name)} -- {command}"
         else:
+            # No environment wrapper - ensure command is available in PATH
             return command
