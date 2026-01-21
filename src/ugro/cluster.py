@@ -26,10 +26,14 @@ class Cluster:
         # Get environment info
         env_config = config.get('environment', {})
         conda_env = env_config.get('conda_env')
+        pixi_env = env_config.get('pixi_env')
         
         # Determine environment command (prefer pixi for this project)
         env_command = None
-        if conda_env:
+        if pixi_env:
+            # Use pixi with specific environment
+            env_command = f"pixi run -e {pixi_env}"
+        elif conda_env:
             # If explicitly set to conda type, use conda
             if env_config.get('type') == 'conda':
                 env_command = f"conda run -n {conda_env}"
