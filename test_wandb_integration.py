@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 # Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent / "src" / "ugro"))
 
 def test_wandb_integration():
     """Test W&B integration with a small HPO run."""
@@ -18,8 +18,8 @@ def test_wandb_integration():
     os.environ["WANDB_PROJECT"] = "ugro-hpo-test"
     
     # Import required modules
-    from ugro.hpo.objective import LoRAFinetuningObjective
-    from ugro.hpo.config import HPOConfig, OptimizerAlgorithm, ParameterBound
+    from hpo.objective import LoRAFinetuningObjective
+    from hpo.config import HPOConfig, OptimizerAlgorithm, ParameterBound
     
     print("🧪 Testing W&B Integration...")
     print(f"   W&B Project: {os.environ.get('WANDB_PROJECT')}")

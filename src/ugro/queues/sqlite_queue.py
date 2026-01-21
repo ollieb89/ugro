@@ -18,7 +18,10 @@ class SQLiteJobQueue(JobQueue):
     def _init_db(self):
         """Initialize the database schema."""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
+            cursor = conn.cursor()
+
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS jobs (
                     id TEXT PRIMARY KEY,
                     priority INTEGER,
@@ -26,13 +29,26 @@ class SQLiteJobQueue(JobQueue):
                     created_at TIMESTAMP,
                     job_data JSON
                 )
-            """)
+                """
+            )
+
+            cursor.execute("PRAGMA table_info(jobs)")
+            existing_columns = {row[1] for row in cursor.fetchall()}
+
+            # Backward-compat: older UGRO DB schemas created a jobs table without `job_data`.
+            # SQLite does not support adding columns via CREATE TABLE IF NOT EXISTS, so we
+            # must explicitly migrate.
+            if "job_data" not in existing_columns:
+                conn.execute("ALTER TABLE jobs ADD COLUMN job_data JSON")
+
             # Index for faster retrieval of pending jobs by priority
-            conn.execute("""
+            conn.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_jobs_pending_priority 
                 ON jobs(priority DESC, created_at ASC) 
                 WHERE status = 'PENDING'
-            """)
+                """
+            )
 
     def submit(self, job: Job) -> str:
         with sqlite3.connect(self.db_path) as conn:
@@ -60,7 +76,7 @@ class SQLiteJobQueue(JobQueue):
             # Find candidate
             cursor.execute("""
                 SELECT id, job_data FROM jobs 
-                WHERE status = ? 
+                WHERE status = ? AND job_data IS NOT NULL
                 ORDER BY priority DESC, created_at ASC 
                 LIMIT 1
             """, (JobStatus.PENDING.value,))
@@ -97,7 +113,7 @@ class SQLiteJobQueue(JobQueue):
             # Find candidate - strictly check ID and PENDING status
             cursor.execute("""
                 SELECT id, job_data FROM jobs 
-                WHERE id = ? AND status = ?
+                WHERE id = ? AND status = ? AND job_data IS NOT NULL
             """, (job_id, JobStatus.PENDING.value))
             
             row = cursor.fetchone()
@@ -124,7 +140,7 @@ class SQLiteJobQueue(JobQueue):
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT job_data FROM jobs 
-                WHERE status = ? 
+                WHERE status = ? AND job_data IS NOT NULL
                 ORDER BY priority DESC, created_at ASC 
                 LIMIT 1
             """, (JobStatus.PENDING.value,))
@@ -136,7 +152,10 @@ class SQLiteJobQueue(JobQueue):
     def get_job(self, job_id: str) -> Optional[Job]:
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            cursor = conn.execute("SELECT job_data FROM jobs WHERE id = ?", (job_id,))
+            cursor = conn.execute(
+                "SELECT job_data FROM jobs WHERE id = ? AND job_data IS NOT NULL",
+                (job_id,),
+            )
             row = cursor.fetchone()
             if row:
                 return Job.model_validate_json(row['job_data'])
@@ -146,14 +165,15 @@ class SQLiteJobQueue(JobQueue):
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             if status:
+                status_value = status.value if isinstance(status, JobStatus) else str(status)
                 cursor = conn.execute(
-                    "SELECT job_data FROM jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?",
-                    (status, limit)
+                    "SELECT job_data FROM jobs WHERE status = ? AND job_data IS NOT NULL ORDER BY created_at DESC LIMIT ?",
+                    (status_value, limit),
                 )
             else:
-                 cursor = conn.execute(
-                    "SELECT job_data FROM jobs ORDER BY created_at DESC LIMIT ?",
-                    (limit,)
+                cursor = conn.execute(
+                    "SELECT job_data FROM jobs WHERE job_data IS NOT NULL ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
                 )
             
             jobs = []
