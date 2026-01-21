@@ -49,4 +49,4 @@ logging:
   log_level: "INFO"
   steps: 10
   use_tensorboard: true
-  tensorboard_dir: "/home/ollie/Development/Tools/ugro/data/experiments/{job_id}/tensorboard"
+  tensorboard_dir: "${HOME}/Development/Tools/ugro_data/experiments/{job_id}/tensorboard"

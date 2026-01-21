@@ -10,7 +10,7 @@ Successfully implemented the Result Aggregator architecture from Phase2 document
 - **`/src/ugro/result_aggregator.py`** - New module
   - `ResultAggregator` class managing base directory and job layout
   - `ResultPaths` dataclass for structured path references
-  - Environment-configurable base directory (`UGRO_DATA_DIR` or default `/home/ollie/Development/Tools/ugro_data`)
+  - Environment-configurable base directory (`UGRO_DATA_DIR` or default `${HOME}/Development/Tools/ugro_data`)
   - Methods: `ensure_job_layout()`, `write_job_config()`, `append_metrics()`, `rank_log_path()`
 
 ### Integration Updates

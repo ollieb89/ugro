@@ -28,7 +28,7 @@ class ResultAggregator:
         elif env_base:
             resolved = Path(env_base)
         else:
-            resolved = Path("/home/ollie/Development/Tools/ugro_data")
+            resolved = Path(f"{os.getenv('HOME')}/Development/Tools/ugro_data")
 
         self.base_dir = resolved
         self.jobs_dir = self.base_dir / "jobs"

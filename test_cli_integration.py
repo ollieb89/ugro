@@ -32,7 +32,7 @@ def test_cli_integration():
                 'ssh_port': 22,
                 'rank': 1,
                 'hardware': {'gpu_model': 'RTX 4070', 'vram_gb': 8},
-                'paths': {'home': '/home/ob', 'project': '/home/ob/Development/Tools/ugro'}
+                'paths': {'home': '/home/ob', 'project': '${HOME}/Development/Tools/ugro'}
             },
             {
                 'name': 'gpu2',
@@ -42,7 +42,7 @@ def test_cli_integration():
                 'ssh_port': 22,
                 'rank': 2,
                 'hardware': {'gpu_model': 'RTX 3070 Ti', 'vram_gb': 8},
-                'paths': {'home': '/home/ollie', 'project': '/home/ollie/Tools/ugro'}
+                'paths': {'home': '${HOME}', 'project': '${HOME}/Development/Tools/ugro'}
             }
         ]
     }

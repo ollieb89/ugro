@@ -33,5 +33,5 @@
     ]
   },
   "errors": [],
-  "result_dir": "/home/ollie/Development/Tools/ugro/data/experiments/first_training"
+  "result_dir": "${HOME}/Development/Tools/ugro_data/experiments/first_training"
 }

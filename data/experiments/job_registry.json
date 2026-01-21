@@ -14,7 +14,7 @@
         "verbose": false,
         "num_workers": 2
       },
-      "directory": "/home/ollie/Development/Tools/ugro/data/experiments/test-job",
+      "directory": "${HOME}/Development/Tools/ugro_data/experiments/test-job",
       "workers": [
         "gpu1",
         "gpu2"
@@ -34,7 +34,7 @@
         "verbose": false,
         "num_workers": 2
       },
-      "directory": "/home/ollie/Development/Tools/ugro/data/experiments/simplified-test",
+      "directory": "${HOME}/Development/Tools/ugro_data/experiments/simplified-test",
       "workers": [
         "gpu1",
         "gpu2"
@@ -52,7 +52,7 @@
         "learning_rate": 0.0002,
         "verbose": false
       },
-      "directory": "/home/ollie/Development/Tools/ugro/data/experiments/first_training",
+      "directory": "${HOME}/Development/Tools/ugro_data/experiments/first_training",
       "workers": [
         "gpu1",
         "gpu2"

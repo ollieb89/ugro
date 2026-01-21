@@ -22,7 +22,7 @@ except ImportError:
     PROMETHEUS_AVAILABLE = False
 
 # Configure logging
-LOG_DIR = Path("/home/ollie/Development/Tools/ugro/logs")
+LOG_DIR = Path(f"{os.getenv('HOME')}/Development/Tools/ugro/logs")
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / "monitor_daemon.log"
 
