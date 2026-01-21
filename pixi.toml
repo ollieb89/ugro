@@ -36,6 +36,30 @@ ugro = { path = ".", editable = true }
 
 
 # ============================================================================
+# CUDA Feature
+# ===========================================================================
+
+[feature.cuda.system-requirements]
+cuda = "12.8"
+
+[feature.cuda.pypi-dependencies]
+torch = { version = "==2.7.1", index = "https://download.pytorch.org/whl/cu128" }
+torchvision = { version = "==0.22.1", index = "https://download.pytorch.org/whl/cu128" }
+torchaudio = { version = "==2.7.1", index = "https://download.pytorch.org/whl/cu128" }
+transformers = ">=4.57.6, <5"
+accelerate = ">=1.12.0, <2"
+bitsandbytes = ">=0.49.1, <0.50"
+sentencepiece = ">=0.2.1, <0.3"
+protobuf = "*"
+optimum-quanto = ">=0.2.7, <0.3"
+
+[feature.cuda.dependencies]
+cuda-version = "12.8.*"
+gcc_linux-64 = "12.*"
+gxx_linux-64 = "12.*"
+git = ">=2.51.0,<3"
+
+# ============================================================================
 # Test Feature
 # ============================================================================
 
@@ -65,7 +89,7 @@ flask = ">=2.3.0"
 default = { features = [], solve-group = "default" }
 monitor = { features = ["monitor"], solve-group = "default" }
 test = { features = ["test", "monitor"], solve-group = "default" }
-
+cuda = { features = ["cuda"], solve-group = "default" }
 
 # ============================================================================
 # Tasks
