@@ -43,6 +43,7 @@ class ParameterBound:
         log: Use log scale sampling (for numeric types)
         step: Step size for discrete sampling
         default: Default value if not sampled
+        condition: Conditional expression string (e.g., "optimizer_type == 'adamw'")
     """
 
     name: str
@@ -53,6 +54,7 @@ class ParameterBound:
     log: bool = False
     step: Optional[float] = None
     default: Optional[Any] = None
+    condition: Optional[str] = None
 
     def __post_init__(self) -> None:
         """Validate parameter specifications."""

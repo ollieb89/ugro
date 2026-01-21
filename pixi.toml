@@ -16,6 +16,7 @@ python-dotenv = ">=1.2.1,<2"
 flask = ">=3.1.2,<4"
 fastapi = ">=0.109.0"
 uvicorn = ">=0.27.0"
+wandb = ">=0.23.1,<0.24"
 
 [feature.cuda.system-requirements]
 cuda = "12.1"
@@ -64,6 +65,7 @@ cusparselt-dev = ">=0.6"
 nccl = ">=2.18"
 cudnn = ">=8.9"
 cuda-runtime = ">=12.1"
+wandb = ">=0.16.0"
 
 [feature.cuda.pypi-dependencies]
 torch = { version = "==2.7.1", index = "https://download.pytorch.org/whl/cu128" }

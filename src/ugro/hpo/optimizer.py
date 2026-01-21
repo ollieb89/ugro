@@ -113,13 +113,15 @@ class UGROOptimizer:
             f"Creating OptunaSearch: metric={primary.name}, mode={mode}, "
             f"storage={self.config.storage_backend}"
         )
-
-        return OptunaSearch(
+        
+        optuna_search = OptunaSearch(
             sampler=self._setup_optuna_sampler(),
             metric=primary.name,
             mode=mode,
+            space=search_space,
             # Note: Storage is set via sampler's study, not directly
         )
+        return optuna_search
 
     def _setup_tracking(self) -> None:
         """Configure experiment tracking (MLflow + W&B)."""
@@ -150,7 +152,7 @@ class UGROOptimizer:
         """
         try:
             import ray
-            from ray import air, tune
+            from ray import tune
             from ray.tune import CLIReporter
         except ImportError as e:
             raise ImportError(
@@ -177,38 +179,55 @@ class UGROOptimizer:
             reduction_factor=self.config.reduction_factor,
         )
 
-        # Build search space
-        search_space = build_ray_search_space(self.config.search_space)
-
-        # Create run configuration
-        run_config = air.RunConfig(
+        # Create run configuration with optional W&B callback
+        storage_path = Path("./ray_results").resolve()
+        
+        # Setup callbacks
+        callbacks = []
+        if self.config.wandb_project:
+            try:
+                from ray.tune.integration.wandb import WandbLoggerCallback
+                callbacks.append(
+                    WandbLoggerCallback(
+                        project=self.config.wandb_project,
+                        group=self.config.study_name,
+                        api_key=os.getenv("WANDB_API_KEY"),
+                        log_config=True,
+                    )
+                )
+                logger.info("W&B logger callback configured for Ray Tune")
+            except ImportError:
+                logger.warning("Ray Tune W&B integration not available")
+        
+        run_config = tune.RunConfig(
             name=self.config.study_name,
-            storage_path="./ray_results",
+            storage_path=str(storage_path),
             progress_reporter=CLIReporter(
                 metric_columns=[obj.name for obj in self.config.objectives]
             ),
-            checkpoint_config=air.CheckpointConfig(
+            checkpoint_config=tune.CheckpointConfig(
                 num_to_keep=3,
                 checkpoint_score_attribute=primary.name,
                 checkpoint_score_order="min" if primary.direction == "minimize" else "max",
             ),
+            callbacks=callbacks,
         )
 
-        # Create tune config
+        # Create tune config with Optuna search
         tune_config = tune.TuneConfig(
             search_alg=self._create_optuna_search(),
-            scheduler=scheduler,
             num_samples=self.config.n_trials,
             max_concurrent_trials=self.config.parallel_jobs,
         )
 
+        # Wrap objective in trainable function for Ray Tune
+        def trainable(config):
+            metrics = self.objective_fn(config)
+            tune.report(metrics)
+        
         # Create tuner with resource specifications
         tuner = tune.Tuner(
-            tune.with_resources(
-                self.objective_fn,
-                resources=self.config.get_ray_resources(),
-            ),
-            param_space=search_space,
+            tune.with_resources(trainable, resources=self.config.get_ray_resources()),
             tune_config=tune_config,
             run_config=run_config,
         )

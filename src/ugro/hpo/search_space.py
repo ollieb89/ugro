@@ -5,6 +5,7 @@ Handles loading and parsing YAML search space configurations.
 
 from __future__ import annotations
 
+import ast
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -86,6 +87,7 @@ def parse_parameter_bounds(config: Dict[str, Any]) -> List[ParameterBound]:
             log=spec.get("log", False),
             step=spec.get("step"),
             default=spec.get("default"),
+            condition=spec.get("condition"),
         )
         bounds.append(bound)
         logger.debug(f"Parsed parameter: {bound}")
@@ -160,6 +162,87 @@ def parse_constraints(config: Dict[str, Any]) -> List[str]:
           - "batch_size <= 128"
     """
     return config.get("constraints", [])
+
+
+def evaluate_condition(condition: str, config: Dict[str, Any]) -> bool:
+    """Safely evaluate a conditional expression against a config.
+
+    Args:
+        condition: Conditional expression string (e.g., "optimizer_type == 'adamw'")
+        config: Dictionary of parameter values
+
+    Returns:
+        True if condition evaluates to True, False otherwise
+
+    Raises:
+        ValueError: If condition contains unsafe operations
+        SyntaxError: If condition has invalid syntax
+    """
+    if not condition:
+        return True
+    
+    try:
+        # Parse the condition into an AST
+        tree = ast.parse(condition, mode='eval')
+    except SyntaxError as e:
+        raise SyntaxError(f"Invalid condition syntax: {condition}") from e
+    
+    # Check for unsafe operations
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            raise ValueError(f"Unsafe operation in condition: {condition}")
+        if isinstance(node, ast.Name) and node.id not in config:
+            raise ValueError(f"Unknown parameter in condition: {node.id}")
+    
+    # Evaluate the condition safely
+    try:
+        # Use eval with restricted globals and only config as locals
+        return eval(compile(tree, filename="<condition>", mode="eval"), 
+                   {"__builtins__": {}}, config)
+    except Exception as e:
+        logger.warning(f"Failed to evaluate condition '{condition}': {e}")
+        return False
+
+
+def apply_conditional_parameters(
+    config: Dict[str, Any], 
+    parameter_bounds: List[ParameterBound]
+) -> Dict[str, Any]:
+    """Apply conditional parameter logic to a configuration.
+
+    Parameters that don't meet their conditions are set to their default values.
+    If no default is specified, the parameter is removed from the config.
+
+    Args:
+        config: Raw configuration dictionary from Ray Tune
+        parameter_bounds: List of parameter bounds with potential conditions
+
+    Returns:
+        Filtered configuration with conditions applied
+    """
+    filtered_config = config.copy()
+    
+    # Sort parameters by dependency order (parameters without conditions first)
+    sorted_params = sorted(
+        parameter_bounds,
+        key=lambda p: 0 if p.condition is None else 1
+    )
+    
+    for param in sorted_params:
+        if param.condition:
+            # Evaluate condition against current filtered config
+            if not evaluate_condition(param.condition, filtered_config):
+                # Condition not met, remove or set to default
+                if param.default is not None:
+                    filtered_config[param.name] = param.default
+                    logger.debug(f"Condition failed for {param.name}, using default: {param.default}")
+                else:
+                    filtered_config.pop(param.name, None)
+                    logger.debug(f"Condition failed for {param.name}, removing parameter")
+            else:
+                logger.debug(f"Condition met for {param.name}: {param.condition}")
+    
+    return filtered_config
 
 
 def build_ray_search_space(

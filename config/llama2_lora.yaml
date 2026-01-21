@@ -1,0 +1,102 @@
+# UGRO HPO: Llama-2 LoRA Search Space
+#
+# Search space configuration optimized for Llama-2-7b LoRA fine-tuning.
+# Use with: ugro hpo sweep --search-space config/llama2_lora.yaml
+#
+# Based on best practices from:
+# - Hugging Face PEFT documentation
+# - LoRA paper (Hu et al., 2021)
+# - Community fine-tuning experiments
+
+parameters:
+  # LoRA rank (expressiveness vs compute trade-off)
+  # Higher rank = more parameters, better expressiveness, slower training
+  lora_r:
+    type: int
+    min: 4
+    max: 64
+    step: 4
+    default: 16
+
+  # LoRA scaling factor (alpha/r ratio controls update magnitude)
+  # Common practice: alpha >= r, typical: alpha = 2*r
+  lora_alpha:
+    type: float
+    min: 8.0
+    max: 128.0
+    log: true
+    default: 32.0
+
+  # Dropout for LoRA layers (regularization)
+  lora_dropout:
+    type: float
+    min: 0.0
+    max: 0.3
+    default: 0.05
+
+  # Learning rate (log scale essential for optimization)
+  # Llama-2 typically converges well with 1e-4 to 5e-4
+  learning_rate:
+    type: float
+    min: 1.0e-5
+    max: 5.0e-4
+    log: true
+    default: 2.0e-4
+
+  # Batch size (memory-constrained, affects gradient noise)
+  batch_size:
+    type: categorical
+    choices: [4, 8, 16, 32]
+    default: 8
+
+  # Warmup ratio (fraction of training for LR warmup)
+  warmup_ratio:
+    type: float
+    min: 0.01
+    max: 0.1
+    default: 0.03
+
+  # Weight decay for regularization
+  weight_decay:
+    type: float
+    min: 0.0
+    max: 0.1
+    default: 0.01
+
+  # Gradient accumulation steps (effective batch = batch_size * grad_accum)
+  gradient_accumulation_steps:
+    type: categorical
+    choices: [1, 2, 4, 8]
+    default: 4
+
+  # Early stopping patience
+  early_stopping_patience:
+    type: int
+    min: 3
+    max: 10
+    default: 5
+
+# Optimization objectives
+objectives:
+  - name: eval_loss
+    direction: minimize
+    weight: 1.0
+
+# Parameter constraints
+constraints:
+  # Alpha should be >= R for stable training
+  - "lora_alpha >= lora_r"
+  # Safety bounds on learning rate
+  - "learning_rate <= 0.001"
+  # Reasonable dropout range
+  - "lora_dropout >= 0.0 and lora_dropout <= 0.5"
+
+# Metadata
+metadata:
+  model: "meta-llama/Llama-2-7b-hf"
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+  description: "Llama-2-7b LoRA fine-tuning search space"
